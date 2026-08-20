@@ -108,7 +108,9 @@ export function createBattleScene(canvas) {
   let flash = 0
   let shake = 0
   let crowdEnergy = 0.5
-  let lunge = null // { who, t, dur, hits, homeX }
+  let lunge = null
+  let camMode = 'idle' // idle | close | side | low | spin
+  let camT = 0
 
   const clock = new THREE.Clock()
   let running = true
@@ -129,13 +131,29 @@ export function createBattleScene(canvas) {
     crowdEnergy = v
   }
 
-  function triggerMove(who, moveId, intensity = 1, hits = 1) {
+  function setCameraMode(mode = 'idle') {
+    camMode = mode || 'idle'
+    camT = 0
+  }
+
+  function triggerMove(who, moveId, intensity = 1, hits = 1, cameraStyle = 'side') {
     const f = who === 'player' ? player : rival
     playPose(f, moveId, intensity)
     flash = 1
-    shake = 0.14
+    shake = 0.1
+    setCameraMode(cameraStyle)
     const homeX = who === 'player' ? PLAYER_HOME : RIVAL_HOME
-    lunge = { who, t: 0, dur: hits > 1 ? 0.85 : 0.45, hits, homeX, moveId, intensity }
+    // baile: bounce in place / small hop, no "golpe"
+    lunge = {
+      who,
+      t: 0,
+      dur: hits > 1 ? 1.05 : 0.7,
+      hits,
+      homeX,
+      moveId,
+      intensity,
+      dance: true,
+    }
   }
 
   function showAuraBurst(who, amount) {
@@ -158,7 +176,7 @@ export function createBattleScene(canvas) {
     f.userData.aura.material.opacity = hit ? 0.08 : 0.4
     f.userData.aura.scale.setScalar(hit ? 0.75 : 1.4)
     if (hit) playPose(f, 'cringe', 1)
-    shake = hit ? 0.26 : 0.12
+    shake = hit ? 0.22 : 0.1
     flash = 1
   }
 
@@ -172,6 +190,9 @@ export function createBattleScene(canvas) {
     lunge = null
     player.position.x = PLAYER_HOME
     rival.position.x = RIVAL_HOME
+    player.position.y = 0
+    rival.position.y = 0
+    setCameraMode('idle')
   }
 
   function resetPositions() {
@@ -197,28 +218,23 @@ export function createBattleScene(canvas) {
     if (!running) return
     const dt = Math.min(clock.getDelta(), 0.05)
     const time = clock.elapsedTime
+    camT += dt
 
     if (lunge) {
       lunge.t += dt
       const f = lunge.who === 'player' ? player : rival
-      const dir = lunge.who === 'player' ? 1 : -1
       const p = Math.min(1, lunge.t / lunge.dur)
-      // forward then back; double hit = two pulses
-      let wave
-      if (lunge.hits > 1) {
-        wave = Math.sin(p * Math.PI * 2)
-      } else {
-        wave = Math.sin(p * Math.PI)
-      }
-      f.position.x = lunge.homeX + dir * 1.55 * Math.max(0, wave)
-      if (p >= 0.5 && lunge.hits > 1 && !lunge.secondPose) {
+      const hops = lunge.hits > 1 ? 4 : 2
+      lunge.hopY = Math.abs(Math.sin(p * Math.PI * hops)) * 0.28
+      lunge.hopX = lunge.homeX + Math.sin(p * Math.PI * hops) * 0.22 * (lunge.who === 'player' ? 1 : -1)
+      if (p >= 0.45 && lunge.hits > 1 && !lunge.secondPose) {
         lunge.secondPose = true
-        playPose(f, lunge.moveId, lunge.intensity * 1.15)
+        playPose(f, lunge.moveId, lunge.intensity * 1.2)
         flash = 1
-        shake = 0.2
       }
       if (p >= 1) {
         f.position.x = lunge.homeX
+        f.position.y = 0
         lunge = null
       }
     }
@@ -231,10 +247,18 @@ export function createBattleScene(canvas) {
     updateFighter(player, dt, time)
     updateFighter(rival, dt, time)
 
+    // apply dance hop after pose update (poses reset y)
+    if (lunge) {
+      const f = lunge.who === 'player' ? player : rival
+      f.position.x = lunge.hopX
+      f.position.y = lunge.hopY
+    }
+
     crowdGroup.children.forEach((c, i) => {
+      const hype = camMode === 'idle' ? crowdEnergy : crowdEnergy + 0.4
       c.position.y =
         c.geometry.parameters.height / 2 +
-        Math.sin(time * (2 + crowdEnergy * 3) + i) * 0.04 * crowdEnergy
+        Math.sin(time * (2 + hype * 4) + i) * 0.05 * hype
     })
 
     if (burstLife > 0) {
@@ -256,9 +280,30 @@ export function createBattleScene(canvas) {
     }
     if (shake > 0) shake = Math.max(0, shake - dt * 1.8)
 
-    camera.position.x = Math.sin(time * 0.2) * 0.12 + (Math.random() - 0.5) * shake
-    camera.position.y = 3.1 + (Math.random() - 0.5) * shake * 0.5
-    camera.lookAt(0, 1.15, 0)
+    // camera styles por baile
+    let goal = new THREE.Vector3(0, 3.1, 8.2)
+    let look = new THREE.Vector3(0, 1.15, 0)
+    if (camMode === 'close') {
+      goal.set(0, 2.2, 5.2)
+      look.set(0, 1.5, 0)
+    } else if (camMode === 'side') {
+      goal.set(-2.8, 2.6, 6.5)
+      look.set(0.4, 1.3, 0)
+    } else if (camMode === 'low') {
+      goal.set(0.4, 1.4, 6.8)
+      look.set(0, 1.6, 0)
+    } else if (camMode === 'spin') {
+      const a = camT * 1.4
+      goal.set(Math.sin(a) * 4.5, 2.8, 6.2 + Math.cos(a) * 2.2)
+      look.set(0, 1.3, 0)
+    } else {
+      goal.set(Math.sin(time * 0.2) * 0.12, 3.1, 8.2)
+    }
+
+    camera.position.lerp(goal, camMode === 'idle' ? 0.04 : 0.1)
+    camera.position.x += (Math.random() - 0.5) * shake
+    camera.position.y += (Math.random() - 0.5) * shake * 0.5
+    camera.lookAt(look)
 
     renderer.render(scene, camera)
     requestAnimationFrame(frame)
@@ -277,6 +322,7 @@ export function createBattleScene(canvas) {
     centerOnFight() {},
     releaseFocus() {},
     triggerMove,
+    setCameraMode,
     showAuraBurst,
     pulse,
     resetPoses,

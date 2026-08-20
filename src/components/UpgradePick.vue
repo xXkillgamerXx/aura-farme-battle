@@ -3,7 +3,7 @@ import { onMounted, onBeforeUnmount, ref } from 'vue'
 
 const props = defineProps({
   choices: { type: Array, required: true },
-  title: { type: String, default: '¡SOY MÁS FAME!' },
+  title: { type: String, default: 'SOY EL MÁS PERRÓN' },
 })
 const emit = defineEmits(['pick'])
 

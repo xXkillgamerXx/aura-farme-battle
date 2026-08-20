@@ -1,13 +1,16 @@
 import { MOVES } from './moves.js'
 import { getMovePower } from './run.js'
 
-/** Niveles de timing: más icónico = más daño */
+export const WIN_LINE = 'SOY EL MÁS PERRÓN'
+export const LOSE_LINE = 'PERDISTE'
+
+/** Niveles de timing */
 export function timingTier(accuracy) {
-  if (accuracy >= 0.9) return { id: 'perfect', label: 'ICÓNICO', mult: 1.55, color: '#ffd166' }
-  if (accuracy >= 0.72) return { id: 'great', label: 'ÉPICO', mult: 1.2, color: '#80ed99' }
-  if (accuracy >= 0.48) return { id: 'ok', label: 'OK', mult: 0.9, color: '#4cc9f0' }
-  if (accuracy >= 0.28) return { id: 'weak', label: 'DÉBIL', mult: 0.5, color: '#c77dff' }
-  return { id: 'miss', label: 'CRINGE', mult: 0.15, color: '#ff6b6b' }
+  if (accuracy >= 0.9) return { id: 'perfect', label: 'ICÓNICO', mult: 1.55, color: '#ffd166', crowd: 'cheer' }
+  if (accuracy >= 0.72) return { id: 'great', label: 'ÉPICO', mult: 1.2, color: '#80ed99', crowd: 'cheer' }
+  if (accuracy >= 0.48) return { id: 'ok', label: 'OK', mult: 0.9, color: '#4cc9f0', crowd: 'meh' }
+  if (accuracy >= 0.28) return { id: 'weak', label: 'DÉBIL', mult: 0.5, color: '#c77dff', crowd: 'boo' }
+  return { id: 'miss', label: 'CRINGE', mult: 0.15, color: '#ff6b6b', crowd: 'boo' }
 }
 
 export function createBattle(rival, run) {
@@ -21,8 +24,8 @@ export function createBattle(rival, run) {
     selectedMove: null,
     moveIndex: 0,
     lastResult: null,
-    outcome: null, // 'win' | 'lose' | null
-    message: `${rival.name} quiere farmear. Elige habilidad (← →).`,
+    outcome: null,
+    message: `${rival.name} en la plaza. Elige baile (← →).`,
     rival,
     log: [],
   }
@@ -35,7 +38,7 @@ export function pickMove(state, moveId) {
     ...state,
     phase: 'timing',
     selectedMove: move,
-    message: 'SPACE una vez en la zona dorada',
+    message: `Baila ${move.name} — SPACE en tu ritmo`,
   }
 }
 
@@ -47,29 +50,28 @@ export function resolvePlayerAttack(state, accuracy, run) {
   const base = getMovePower(run, move)
   let mult = tier.mult
   if (tier.id === 'perfect') mult += run.iconicBonus || 0
-  let damage = Math.round(base * mult)
+  let shame = Math.round(base * mult) // vergüenza al rival
 
-  let selfDamage = 0
+  let selfShame = 0
   if (tier.id === 'miss') {
-    damage = Math.max(1, Math.round(base * 0.12))
-    if (!run.noSelfCringe) selfDamage = Math.round(base * 0.3)
+    shame = Math.max(1, Math.round(base * 0.12))
+    if (!run.noSelfCringe) selfShame = Math.round(base * 0.3)
   }
 
-  // Double hit chance on perfect
   let hits = 1
   if (tier.id === 'perfect' && Math.random() < 0.45) {
     hits = 2
-    damage = Math.round(damage * 1.35)
+    shame = Math.round(shame * 1.35)
   }
 
-  const rivalAura = clamp(state.rivalAura - damage, 0, state.rivalMax)
-  const playerAura = clamp(state.playerAura - selfDamage, 0, state.playerMax)
+  const rivalAura = clamp(state.rivalAura - shame, 0, state.rivalMax)
+  const playerAura = clamp(state.playerAura - selfShame, 0, state.playerMax)
   const won = rivalAura <= 0
   const lost = playerAura <= 0
 
   return {
     ...state,
-    phase: won ? 'matchEnd' : lost ? 'matchEnd' : 'playerShow',
+    phase: won || lost ? 'matchEnd' : 'playerShow',
     outcome: won ? 'win' : lost ? 'lose' : null,
     playerAura,
     rivalAura,
@@ -79,40 +81,41 @@ export function resolvePlayerAttack(state, accuracy, run) {
       move,
       accuracy,
       tier,
-      damage,
-      selfDamage,
+      damage: shame,
+      selfDamage: selfShame,
       hits,
+      crowd: tier.crowd,
     },
     message: won
-      ? '¡SOY MÁS FAME!'
+      ? WIN_LINE
       : lost
-        ? 'PERDISTE'
-        : `${move.name}${hits > 1 ? ' x2' : ''} → ${damage} (${tier.label})`,
-    log: [...state.log, { turn: state.turn, side: 'player', move: move.name, damage, tier: tier.id }],
+        ? LOSE_LINE
+        : `${move.name} → -${shame} vergüenza (${tier.label})`,
+    log: [...state.log, { turn: state.turn, side: 'player', move: move.name, damage: shame, tier: tier.id }],
   }
 }
 
 export function resolveRivalAttack(state) {
   if (state.rivalAura <= 0) {
-    return { ...state, phase: 'matchEnd', outcome: 'win', message: '¡SOY MÁS FAME!' }
+    return { ...state, phase: 'matchEnd', outcome: 'win', message: WIN_LINE }
   }
   if (state.playerAura <= 0) {
-    return { ...state, phase: 'matchEnd', outcome: 'lose', message: 'PERDISTE' }
+    return { ...state, phase: 'matchEnd', outcome: 'lose', message: LOSE_LINE }
   }
 
   const move = MOVES[Math.floor(Math.random() * MOVES.length)]
   const roll = 0.35 + state.rival.difficulty * 0.5 + Math.random() * 0.2
   const accuracy = clamp(roll, 0.15, 0.98)
   const tier = timingTier(accuracy)
-  let damage = Math.round(move.power * tier.mult * (0.85 + state.rival.difficulty * 0.3))
+  let shame = Math.round(move.power * tier.mult * (0.85 + state.rival.difficulty * 0.3))
   let hits = 1
   if (tier.id === 'perfect' && Math.random() < 0.35) {
     hits = 2
-    damage = Math.round(damage * 1.25)
+    shame = Math.round(shame * 1.25)
   }
-  if (tier.id === 'miss') damage = Math.max(1, Math.round(move.power * 0.15))
+  if (tier.id === 'miss') shame = Math.max(1, Math.round(move.power * 0.15))
 
-  const playerAura = clamp(state.playerAura - damage, 0, state.playerMax)
+  const playerAura = clamp(state.playerAura - shame, 0, state.playerMax)
   const lost = playerAura <= 0
 
   return {
@@ -125,23 +128,24 @@ export function resolveRivalAttack(state) {
       move,
       accuracy,
       tier,
-      damage,
+      damage: shame,
       selfDamage: 0,
       hits,
+      crowd: tier.crowd,
     },
     message: lost
-      ? 'PERDISTE'
-      : `${state.rival.name}: ${move.name}${hits > 1 ? ' x2' : ''} → ${damage}`,
-    log: [...state.log, { turn: state.turn, side: 'rival', move: move.name, damage, tier: tier.id }],
+      ? LOSE_LINE
+      : `${state.rival.name} bailó ${move.name} → -${shame} vergüenza`,
+    log: [...state.log, { turn: state.turn, side: 'rival', move: move.name, damage: shame, tier: tier.id }],
   }
 }
 
 export function nextPlayerTurn(state) {
   if (state.playerAura <= 0) {
-    return { ...state, phase: 'matchEnd', outcome: 'lose', message: 'PERDISTE' }
+    return { ...state, phase: 'matchEnd', outcome: 'lose', message: LOSE_LINE }
   }
   if (state.rivalAura <= 0) {
-    return { ...state, phase: 'matchEnd', outcome: 'win', message: '¡SOY MÁS FAME!' }
+    return { ...state, phase: 'matchEnd', outcome: 'win', message: WIN_LINE }
   }
   return {
     ...state,
@@ -149,7 +153,7 @@ export function nextPlayerTurn(state) {
     turn: state.turn + 1,
     selectedMove: null,
     lastResult: null,
-    message: `Turno ${state.turn + 1}. ← → elige · SPACE usa`,
+    message: `Turno ${state.turn + 1}. ← → baile · SPACE ritmo`,
   }
 }
 

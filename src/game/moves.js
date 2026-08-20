@@ -1,13 +1,15 @@
-/** Moves de farmeo de aura */
+/** Moves = bailes de farmeo de aura */
 export const MOVES = [
   {
     id: 'aura-walk',
     name: 'Aura Walk',
-    tag: 'walk',
+    tag: 'baile',
     power: 22,
     risk: 0.12,
-    desc: 'Camina lento. No mires atrás.',
+    desc: 'Caminata lenta. El rival se siente pequeño.',
     color: '#4cc9f0',
+    bar: { zone: 0.5, width: 0.14, speed: 1.0 },
+    camera: 'side',
   },
   {
     id: 'mewing',
@@ -15,17 +17,21 @@ export const MOVES = [
     tag: 'pose',
     power: 18,
     risk: 0.08,
-    desc: 'Mandíbula. Mirada fija. Silencio.',
+    desc: 'Mandíbula. Silencio. Vergüenza ajena.',
     color: '#80ed99',
+    bar: { zone: 0.55, width: 0.18, speed: 0.85 },
+    camera: 'close',
   },
   {
     id: 'six-seven',
     name: 'Six Seven',
-    tag: 'meme',
+    tag: 'baile',
     power: 26,
     risk: 0.22,
-    desc: 'Gesto viral. Si fallas timing = cringe.',
+    desc: 'Gesto viral. Si fallas = abucheo.',
     color: '#ffd166',
+    bar: { zone: 0.38, width: 0.11, speed: 1.35 },
+    camera: 'low',
   },
   {
     id: 'sigma-stare',
@@ -33,17 +39,21 @@ export const MOVES = [
     tag: 'pose',
     power: 20,
     risk: 0.1,
-    desc: 'Contacto visual. El rival parpadea primero.',
+    desc: 'Mirada fija. El crowd susurra hooo.',
     color: '#c77dff',
+    bar: { zone: 0.62, width: 0.13, speed: 0.95 },
+    camera: 'close',
   },
   {
     id: 'boat-kid',
     name: 'Boat Rhythm',
-    tag: 'dance',
+    tag: 'baile',
     power: 28,
     risk: 0.18,
-    desc: 'El baile del barco. Ritmo frío.',
+    desc: 'Ritmo del barco. Baile frío.',
     color: '#f72585',
+    bar: { zone: 0.48, width: 0.12, speed: 1.2 },
+    camera: 'spin',
   },
   {
     id: 'no-look',
@@ -51,8 +61,10 @@ export const MOVES = [
     tag: 'flex',
     power: 24,
     risk: 0.25,
-    desc: 'Ganas y ni miras. Máximo aura… o cero.',
+    desc: 'Ni miras. O eres leyenda… o cringe.',
     color: '#ff9f1c',
+    bar: { zone: 0.7, width: 0.1, speed: 1.45 },
+    camera: 'side',
   },
 ]
 
@@ -67,8 +79,8 @@ export const RIVALS = [
 export const UPGRADES = [
   {
     id: 'pwr-all',
-    name: 'Más Fame',
-    desc: '+3 poder a todas las habilidades',
+    name: 'Más Perrón',
+    desc: '+3 poder a todos los bailes',
     apply: (run) => {
       Object.keys(run.moveBonus).forEach((id) => {
         run.moveBonus[id] += 3
@@ -77,8 +89,8 @@ export const UPGRADES = [
   },
   {
     id: 'pwr-best',
-    name: 'Main Move',
-    desc: '+8 poder a tu habilidad más fuerte',
+    name: 'Main Baile',
+    desc: '+8 poder a tu baile más fuerte',
     apply: (run) => {
       let best = MOVES[0].id
       let bestP = 0
@@ -104,7 +116,7 @@ export const UPGRADES = [
   {
     id: 'crit',
     name: 'Iconic Boost',
-    desc: 'Timing ICÓNICO hace +25% daño extra',
+    desc: 'Timing ICÓNICO hace +25% vergüenza extra',
     apply: (run) => {
       run.iconicBonus += 0.25
     },
@@ -112,7 +124,7 @@ export const UPGRADES = [
   {
     id: 'shield',
     name: 'No Cringe',
-    desc: 'Los misses ya no te hacen daño a ti',
+    desc: 'Los misses ya no te dan vergüenza a ti',
     apply: (run) => {
       run.noSelfCringe = true
     },

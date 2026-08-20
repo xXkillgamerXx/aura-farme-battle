@@ -50,7 +50,19 @@ watch(
     }
     if (fx.type === 'move') {
       api.setAttacking(true)
-      api.triggerMove(fx.who, fx.moveId, fx.intensity ?? 1, fx.hits ?? 1)
+      api.triggerMove(
+        fx.who,
+        fx.moveId,
+        fx.intensity ?? 1,
+        fx.hits ?? 1,
+        fx.camera || 'side',
+      )
+    }
+    if (fx.type === 'camera') {
+      api.setCameraMode?.(fx.mode || 'idle')
+    }
+    if (fx.type === 'shame') {
+      api.showAuraBurst(fx.who, -10)
     }
     if (fx.type === 'aura') {
       api.showAuraBurst(fx.who, fx.amount)

@@ -62,8 +62,8 @@ const rivalPct = computed(() => (props.rivalAura / props.rivalMax) * 100)
     <div v-if="lastResult && (phase === 'playerShow' || phase === 'rivalShow')" class="result">
       <span :style="{ color: lastResult.tier?.color }">{{ lastResult.tier?.label }}</span>
       <span>{{ lastResult.move?.name }}</span>
-      <span v-if="lastResult.hits > 1" class="x2">x2</span>
-      <span class="dmg">-{{ lastResult.damage }}</span>
+      <span v-if="lastResult.hits > 1" class="x2">x2 baile</span>
+      <span class="dmg">-{{ lastResult.damage }} vergüenza</span>
     </div>
 
     <div v-if="phase === 'pick'" class="moves">
@@ -87,7 +87,7 @@ const rivalPct = computed(() => (props.rivalAura / props.rivalMax) * 100)
 
     <div v-if="phase === 'pick'" class="attack-row">
       <button type="button" class="attack-btn" @click="$emit('attack')">
-        USAR <kbd>SPACE</kbd>
+        USAR BAILE <kbd>SPACE</kbd>
       </button>
     </div>
 

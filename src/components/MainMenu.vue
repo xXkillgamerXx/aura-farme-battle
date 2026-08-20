@@ -77,7 +77,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           <li>Mapa: entra a la pelea actual.</li>
           <li>← → selecciona habilidad. SPACE la usa.</li>
           <li>Barra: ICÓNICO = más daño (a veces x2).</li>
-          <li>Si ganas: “SOY MÁS FAME” y eliges mejora.</li>
+          <li>Si ganas: “SOY EL MÁS PERRÓN” y eliges mejora.</li>
           <li>Si se te acaba el aura: PERDISTE. Punto.</li>
         </ol>
         <p class="close-hint">ESC o SPACE para cerrar</p>

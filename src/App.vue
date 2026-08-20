@@ -5,6 +5,7 @@ import BattleHud from './components/BattleHud.vue'
 import TimingBar from './components/TimingBar.vue'
 import MainMenu from './components/MainMenu.vue'
 import AuraFloats from './components/AuraFloats.vue'
+import CrowdReact from './components/CrowdReact.vue'
 import RunMap from './components/RunMap.vue'
 import UpgradePick from './components/UpgradePick.vue'
 import { MOVES } from './game/moves.js'
@@ -20,6 +21,7 @@ import {
   resolvePlayerAttack,
   resolveRivalAttack,
   nextPlayerTurn,
+  WIN_LINE,
 } from './game/battle.js'
 
 /** screen: menu | map | battle | upgrade | runWin */
@@ -32,15 +34,20 @@ const timingRef = ref(null)
 const sceneRef = ref(null)
 const moveIndex = ref(0)
 const upgradeChoices = ref([])
+const crowdEvent = ref(null)
 const spaceDown = ref(false)
 
 const inBattle = computed(() => screen.value === 'battle')
+const selectedMove = computed(() => MOVES[moveIndex.value])
 
 function bumpFx(payload) {
   fx.value = { ...payload, t: Date.now() }
 }
 function spawnFloat(payload) {
   floatEvent.value = { ...payload, t: Date.now() }
+}
+function spawnCrowd(kind) {
+  crowdEvent.value = { kind, t: Date.now() }
 }
 
 function resetRun() {
@@ -74,13 +81,15 @@ function onSelectMove(i) {
   const idx = ((i % MOVES.length) + MOVES.length) % MOVES.length
   moveIndex.value = idx
   battle.moveIndex = idx
-  battle.message = `${MOVES[idx].name} · SPACE para usar`
+  battle.message = `${MOVES[idx].name} · SPACE para bailar`
 }
 
 function startAbility() {
   if (battle.phase !== 'pick') return
   const move = MOVES[moveIndex.value]
   Object.assign(battle, pickMove(battle, move.id))
+  // preview camera for this dance
+  bumpFx({ type: 'camera', mode: move.camera || 'side' })
   nextTick(() => timingRef.value?.start())
 }
 
@@ -90,31 +99,46 @@ function onTiming(accuracy) {
   const result = next.lastResult
   if (!result) return
 
+  // 1) baile + cámara
   bumpFx({
     type: 'move',
     who: 'player',
     moveId: result.move.id,
     intensity: Math.max(0.55, result.accuracy),
     hits: result.hits || 1,
+    camera: result.move.camera || 'side',
   })
 
+  // 2) crowd reacciona
+  setTimeout(() => spawnCrowd(result.crowd || result.tier.crowd || 'meh'), 280)
+
+  // 3) luego efecto de vergüenza al rival
   setTimeout(() => {
+    bumpFx({ type: 'shame', who: 'rival' })
     bumpFx({ type: 'aura', who: 'rival', amount: -result.damage })
     const r = sceneRef.value?.projectToScreen?.('rival') ?? { x: window.innerWidth * 0.7, y: 220 }
-    spawnFloat({ who: 'rival', kind: 'down', text: `-${result.damage}`, x: r.x, y: r.y })
+    spawnFloat({
+      who: 'rival',
+      kind: 'down',
+      text: `-${result.damage} VERGÜENZA`,
+      x: r.x,
+      y: r.y,
+    })
     if (result.hits > 1) {
       spawnFloat({
         who: 'player',
         kind: 'up',
-        text: 'ATAQUE DOBLE',
+        text: 'DOBLE BAILE',
         x: window.innerWidth / 2,
         y: 120,
       })
     }
     if (result.selfDamage) {
+      bumpFx({ type: 'shame', who: 'player' })
       bumpFx({ type: 'aura', who: 'player', amount: -result.selfDamage })
+      spawnCrowd('boo')
     }
-  }, 420)
+  }, 650)
 }
 
 function playRivalTurn() {
@@ -129,13 +153,23 @@ function playRivalTurn() {
     moveId: result.move.id,
     intensity: 0.9,
     hits: result.hits || 1,
+    camera: result.move.camera || 'side',
   })
 
+  setTimeout(() => spawnCrowd(result.crowd || result.tier.crowd || 'meh'), 280)
+
   setTimeout(() => {
+    bumpFx({ type: 'shame', who: 'player' })
     bumpFx({ type: 'aura', who: 'player', amount: -result.damage })
     const p = sceneRef.value?.projectToScreen?.('player') ?? { x: 140, y: 220 }
-    spawnFloat({ who: 'player', kind: 'down', text: `-${result.damage}`, x: p.x, y: p.y })
-  }, 380)
+    spawnFloat({
+      who: 'player',
+      kind: 'down',
+      text: `-${result.damage} VERGÜENZA`,
+      x: p.x,
+      y: p.y,
+    })
+  }, 650)
 }
 
 function onWinFlow() {
@@ -167,7 +201,7 @@ function onContinue() {
   if (battle.phase === 'playerShow') {
     if (battle.outcome === 'win') {
       battle.phase = 'matchEnd'
-      battle.message = '¡SOY MÁS FAME!'
+      battle.message = WIN_LINE
       return
     }
     playRivalTurn()
@@ -268,6 +302,7 @@ watch(
     />
 
     <AuraFloats :event="floatEvent" />
+    <CrowdReact :event="crowdEvent" />
 
     <MainMenu
       v-if="screen === 'menu'"
@@ -284,12 +319,12 @@ watch(
     <UpgradePick
       v-if="screen === 'upgrade'"
       :choices="upgradeChoices"
-      title="¡SOY MÁS FAME!"
+      :title="WIN_LINE"
       @pick="onUpgradePick"
     />
 
     <div v-if="screen === 'runWin'" class="banner win">
-      <h1>¡SOY MÁS FAME!</h1>
+      <h1>{{ WIN_LINE }}</h1>
       <p>Completaste la ruta. Fame {{ run.fame }}</p>
       <button type="button" @click="() => { resetRun(); goMap() }">Nueva ruta <kbd>SPACE</kbd></button>
     </div>
@@ -322,7 +357,12 @@ watch(
       />
 
       <div v-if="battle.phase === 'timing'" class="timing-wrap">
-        <TimingBar ref="timingRef" :active="true" @hit="onTiming" />
+        <TimingBar
+          ref="timingRef"
+          :active="true"
+          :move="battle.selectedMove || selectedMove"
+          @hit="onTiming"
+        />
       </div>
     </div>
   </div>
