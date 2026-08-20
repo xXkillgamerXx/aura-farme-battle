@@ -16,7 +16,7 @@ defineProps({
   distance: { type: Number, default: 3 },
 })
 
-defineEmits(['pick', 'continue', 'restart', 'select-move'])
+defineEmits(['pick', 'continue', 'restart', 'select-move', 'attack'])
 </script>
 
 <template>
@@ -83,7 +83,7 @@ defineEmits(['pick', 'continue', 'restart', 'select-move'])
         class="move"
         :class="{ on: i === moveIndex }"
         :style="{ '--c': m.color }"
-        @click="$emit('select-move', i); $emit('pick', m.id)"
+        @click="$emit('select-move', i)"
       >
         <div class="move-top">
           <strong>{{ m.name }}</strong>
@@ -94,9 +94,15 @@ defineEmits(['pick', 'continue', 'restart', 'select-move'])
       </button>
     </div>
 
+    <div v-if="phase === 'pick'" class="attack-row">
+      <button type="button" class="attack-btn" @click="$emit('attack')">
+        ATACAR <kbd>SPACE</kbd>
+      </button>
+    </div>
+
     <div v-if="phase === 'pick'" class="controls">
       <span><kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd> mover</span>
-      <span><kbd>Q</kbd><kbd>E</kbd> move</span>
+      <span><kbd>Q</kbd><kbd>E</kbd> elegir</span>
       <span><kbd>SPACE</kbd> atacar</span>
     </div>
 
@@ -317,6 +323,30 @@ defineEmits(['pick', 'continue', 'restart', 'select-move'])
   color: var(--muted);
   font-size: 0.78rem;
 }
+
+.attack-row {
+  display: flex;
+  justify-content: center;
+}
+
+.attack-btn {
+  border-radius: 14px;
+  padding: 0.9rem 1.5rem;
+  background: linear-gradient(135deg, #f72585, #ff9f1c);
+  color: #fff;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  box-shadow: 0 10px 28px rgba(247, 37, 133, 0.35);
+}
+
+.attack-btn kbd {
+  background: rgba(0, 0, 0, 0.2);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
 
 kbd {
   display: inline-block;

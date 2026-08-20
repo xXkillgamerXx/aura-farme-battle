@@ -4,6 +4,7 @@ import AuraScene from './components/AuraScene.vue'
 import BattleHud from './components/BattleHud.vue'
 import TimingBar from './components/TimingBar.vue'
 import MainMenu from './components/MainMenu.vue'
+import AuraFloats from './components/AuraFloats.vue'
 import { MOVES } from './game/moves.js'
 import {
   createBattle,
@@ -15,6 +16,7 @@ import {
 
 const battle = reactive(createBattle(0))
 const fx = ref(null)
+const floatEvent = ref(null)
 const timingRef = ref(null)
 const sceneRef = ref(null)
 const moveIndex = ref(0)
@@ -49,6 +51,10 @@ function bumpFx(payload) {
   fx.value = { ...payload, t: Date.now() }
 }
 
+function spawnFloat(payload) {
+  floatEvent.value = { ...payload, t: Date.now() }
+}
+
 function syncDistance() {
   distance.value = sceneRef.value?.getDistance?.() ?? 3
 }
@@ -56,6 +62,7 @@ function syncDistance() {
 function onSelectMove(i) {
   moveIndex.value = i
   battle.moveIndex = i
+  battle.message = `Move listo: ${MOVES[i].name}. SPACE para atacar.`
 }
 
 function attackWithSelected() {
@@ -63,15 +70,18 @@ function attackWithSelected() {
   const move = MOVES[moveIndex.value]
   if (!move) return
   syncDistance()
+
+  // Dash + camera center first, then timing
+  bumpFx({ type: 'prepare' })
   Object.assign(battle, pickMove(battle, move.id))
+  battle.message = `¡Atacando con ${move.name}! Clava el timing`
   nextTick(() => timingRef.value?.start())
 }
 
 function onPick(moveId) {
+  // click only selects — attack with SPACE
   const idx = MOVES.findIndex((m) => m.id === moveId)
   if (idx >= 0) onSelectMove(idx)
-  Object.assign(battle, pickMove(battle, moveId))
-  nextTick(() => timingRef.value?.start())
 }
 
 function onTiming(accuracy) {
@@ -86,7 +96,7 @@ function onTiming(accuracy) {
     type: 'move',
     who: 'player',
     moveId: result.move.id,
-    intensity: result.accuracy,
+    intensity: Math.max(0.55, result.accuracy),
   })
 
   setTimeout(() => {
@@ -94,19 +104,44 @@ function onTiming(accuracy) {
       type: 'move',
       who: 'rival',
       moveId: result.rivalMove.id,
-      intensity: 0.8 + Math.random() * 0.3,
+      intensity: 0.85,
     })
-  }, 280)
+  }, 320)
 
   setTimeout(() => {
-    if (result.verdict === 'cringe') {
-      bumpFx({ type: 'pulse', who: 'player', good: false })
-    } else if (result.verdict === 'win') {
-      bumpFx({ type: 'pulse', who: 'player', good: true })
-    } else if (result.verdict === 'lose') {
-      bumpFx({ type: 'pulse', who: 'rival', good: true })
+    // Aura up/down bursts + floating numbers
+    bumpFx({ type: 'aura', who: 'player', amount: result.playerGain })
+    const p = sceneRef.value?.projectToScreen?.('player') ?? { x: 120, y: 220 }
+    spawnFloat({
+      who: 'player',
+      kind: result.playerGain >= 0 ? 'up' : 'down',
+      text: `${result.playerGain >= 0 ? '+' : ''}${result.playerGain} AURA`,
+      x: p.x,
+      y: p.y,
+    })
+  }, 520)
+
+  setTimeout(() => {
+    bumpFx({ type: 'aura', who: 'rival', amount: result.rivalGain })
+    const r = sceneRef.value?.projectToScreen?.('rival') ?? { x: window.innerWidth - 140, y: 220 }
+    spawnFloat({
+      who: 'rival',
+      kind: result.rivalGain >= 0 ? 'up' : 'down',
+      text: `${result.rivalGain >= 0 ? '+' : ''}${result.rivalGain} AURA`,
+      x: r.x,
+      y: r.y,
+    })
+
+    if (result.crowdDelta) {
+      spawnFloat({
+        who: 'crowd',
+        kind: 'crowd',
+        text: `${result.crowdDelta > 0 ? '+' : ''}${result.crowdDelta} CROWD`,
+        x: window.innerWidth / 2,
+        y: 140,
+      })
     }
-  }, 700)
+  }, 780)
 }
 
 function onContinue() {
@@ -130,8 +165,8 @@ function onRestart() {
 
 function cycleMove(dir) {
   if (battle.phase !== 'pick') return
-  moveIndex.value = (moveIndex.value + dir + MOVES.length) % MOVES.length
-  battle.moveIndex = moveIndex.value
+  const next = (moveIndex.value + dir + MOVES.length) % MOVES.length
+  onSelectMove(next)
 }
 
 function onKeyDown(e) {
@@ -184,7 +219,7 @@ onMounted(() => {
   window.addEventListener('keyup', onKeyUp)
   distTimer = window.setInterval(() => {
     if (battle.phase === 'pick') syncDistance()
-  }, 120)
+  }, 100)
 })
 
 onBeforeUnmount(() => {
@@ -212,6 +247,8 @@ watch(
       :input="input"
     />
 
+    <AuraFloats :event="floatEvent" />
+
     <MainMenu v-if="battle.phase === 'menu'" @start="onStartFromMenu" />
 
     <div v-if="battle.phase !== 'menu'" class="overlay">
@@ -230,6 +267,7 @@ watch(
         :distance="distance"
         @pick="onPick"
         @select-move="onSelectMove"
+        @attack="attackWithSelected"
         @continue="onContinue"
         @restart="onRestart"
       />

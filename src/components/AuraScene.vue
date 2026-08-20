@@ -43,9 +43,17 @@ watch(
   () => props.fx,
   (fx) => {
     if (!api || !fx) return
+    if (fx.type === 'prepare') {
+      api.setAttacking(true)
+      api.dashTowardRival()
+      api.centerOnFight(true)
+    }
     if (fx.type === 'move') {
       api.setAttacking(true)
       api.triggerMove(fx.who, fx.moveId, fx.intensity ?? 1)
+    }
+    if (fx.type === 'aura') {
+      api.showAuraBurst(fx.who, fx.amount)
     }
     if (fx.type === 'pulse') {
       api.pulse(fx.who, fx.good)
@@ -64,6 +72,7 @@ watch(
 
 defineExpose({
   getDistance: () => api?.getDistance?.() ?? 3,
+  projectToScreen: (who) => api?.projectToScreen?.(who) ?? { x: 0, y: 0 },
 })
 </script>
 
