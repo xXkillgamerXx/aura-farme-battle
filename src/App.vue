@@ -1,52 +1,91 @@
 <script setup>
-import { nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import AuraScene from './components/AuraScene.vue'
 import BattleHud from './components/BattleHud.vue'
 import TimingBar from './components/TimingBar.vue'
 import MainMenu from './components/MainMenu.vue'
 import AuraFloats from './components/AuraFloats.vue'
+import RunMap from './components/RunMap.vue'
+import UpgradePick from './components/UpgradePick.vue'
 import { MOVES } from './game/moves.js'
+import {
+  createRun,
+  getRivalForFloor,
+  pickUpgradeChoices,
+  applyUpgrade,
+} from './game/run.js'
 import {
   createBattle,
   pickMove,
   resolvePlayerAttack,
   resolveRivalAttack,
   nextPlayerTurn,
-  startBattle,
 } from './game/battle.js'
 
-const battle = reactive(createBattle(0))
+/** screen: menu | map | battle | upgrade | runWin */
+const screen = ref('menu')
+const run = reactive(createRun())
+const battle = reactive(createBattle(getRivalForFloor(0), run))
 const fx = ref(null)
 const floatEvent = ref(null)
 const timingRef = ref(null)
 const sceneRef = ref(null)
 const moveIndex = ref(0)
-let rivalIndex = 0
+const upgradeChoices = ref([])
+const spaceDown = ref(false)
+
+const inBattle = computed(() => screen.value === 'battle')
 
 function bumpFx(payload) {
   fx.value = { ...payload, t: Date.now() }
 }
-
 function spawnFloat(payload) {
   floatEvent.value = { ...payload, t: Date.now() }
 }
 
+function resetRun() {
+  Object.assign(run, createRun())
+  moveIndex.value = 0
+}
+
+function goMenu() {
+  screen.value = 'menu'
+  battle.phase = 'menu'
+}
+
+function goMap() {
+  screen.value = 'map'
+}
+
+function startFight() {
+  const rival = getRivalForFloor(run.floor)
+  Object.assign(battle, createBattle(rival, run))
+  if (run.healAfter) {
+    battle.playerAura = run.maxHp
+    run.healAfter = false
+  }
+  moveIndex.value = 0
+  screen.value = 'battle'
+  bumpFx({ type: 'resetAll' })
+}
+
 function onSelectMove(i) {
-  moveIndex.value = i
-  battle.moveIndex = i
-  battle.message = `${MOVES[i].name} lista. SPACE para usar.`
+  if (battle.phase !== 'pick') return
+  const idx = ((i % MOVES.length) + MOVES.length) % MOVES.length
+  moveIndex.value = idx
+  battle.moveIndex = idx
+  battle.message = `${MOVES[idx].name} · SPACE para usar`
 }
 
 function startAbility() {
   if (battle.phase !== 'pick') return
   const move = MOVES[moveIndex.value]
-  if (!move) return
   Object.assign(battle, pickMove(battle, move.id))
   nextTick(() => timingRef.value?.start())
 }
 
 function onTiming(accuracy) {
-  const next = resolvePlayerAttack(battle, accuracy)
+  const next = resolvePlayerAttack(battle, accuracy, run)
   Object.assign(battle, next)
   const result = next.lastResult
   if (!result) return
@@ -55,31 +94,27 @@ function onTiming(accuracy) {
     type: 'move',
     who: 'player',
     moveId: result.move.id,
-    intensity: Math.max(0.5, result.accuracy),
+    intensity: Math.max(0.55, result.accuracy),
+    hits: result.hits || 1,
   })
 
   setTimeout(() => {
-    // daño al rival = aura baja
     bumpFx({ type: 'aura', who: 'rival', amount: -result.damage })
     const r = sceneRef.value?.projectToScreen?.('rival') ?? { x: window.innerWidth * 0.7, y: 220 }
-    spawnFloat({
-      who: 'rival',
-      kind: 'down',
-      text: `-${result.damage}`,
-      x: r.x,
-      y: r.y,
-    })
-    spawnFloat({
-      who: 'player',
-      kind: result.tier.id === 'miss' ? 'down' : 'up',
-      text: result.tier.label,
-      x: (sceneRef.value?.projectToScreen?.('player') ?? { x: 140, y: 180 }).x,
-      y: 160,
-    })
+    spawnFloat({ who: 'rival', kind: 'down', text: `-${result.damage}`, x: r.x, y: r.y })
+    if (result.hits > 1) {
+      spawnFloat({
+        who: 'player',
+        kind: 'up',
+        text: 'ATAQUE DOBLE',
+        x: window.innerWidth / 2,
+        y: 120,
+      })
+    }
     if (result.selfDamage) {
       bumpFx({ type: 'aura', who: 'player', amount: -result.selfDamage })
     }
-  }, 380)
+  }, 420)
 }
 
 function playRivalTurn() {
@@ -93,28 +128,48 @@ function playRivalTurn() {
     who: 'rival',
     moveId: result.move.id,
     intensity: 0.9,
+    hits: result.hits || 1,
   })
 
   setTimeout(() => {
     bumpFx({ type: 'aura', who: 'player', amount: -result.damage })
     const p = sceneRef.value?.projectToScreen?.('player') ?? { x: 140, y: 220 }
-    spawnFloat({
-      who: 'player',
-      kind: 'down',
-      text: `-${result.damage}`,
-      x: p.x,
-      y: p.y,
-    })
-  }, 350)
+    spawnFloat({ who: 'player', kind: 'down', text: `-${result.damage}`, x: p.x, y: p.y })
+  }, 380)
+}
+
+function onWinFlow() {
+  run.fame += 1
+  if (run.floor >= run.maxFloors - 1) {
+    run.wonRun = true
+    screen.value = 'runWin'
+    return
+  }
+  upgradeChoices.value = pickUpgradeChoices(3)
+  screen.value = 'upgrade'
+}
+
+function onUpgradePick(id) {
+  Object.assign(run, applyUpgrade(run, id))
+  run.floor += 1
+  goMap()
 }
 
 function onContinue() {
-  if (battle.phase === 'playerShow') {
-    if (battle.rivalAura <= 0 || battle.playerAura <= 0) {
-      battle.phase = 'matchEnd'
+  if (battle.phase === 'matchEnd') {
+    if (battle.outcome === 'lose') {
+      // stay on lose until SPACE → menu
       return
     }
-    // rival turn
+    if (battle.outcome === 'win') onWinFlow()
+    return
+  }
+  if (battle.phase === 'playerShow') {
+    if (battle.outcome === 'win') {
+      battle.phase = 'matchEnd'
+      battle.message = '¡SOY MÁS FAME!'
+      return
+    }
     playRivalTurn()
     return
   }
@@ -124,67 +179,74 @@ function onContinue() {
   }
 }
 
-function onStartFromMenu() {
-  Object.assign(battle, startBattle(battle))
-  bumpFx({ type: 'resetAll' })
-}
-
-function onRestart() {
-  rivalIndex += 1
-  Object.assign(battle, createBattle(rivalIndex))
-  moveIndex.value = 0
-}
-
-function cycleMove(dir) {
-  if (battle.phase !== 'pick') return
-  onSelectMove((moveIndex.value + dir + MOVES.length) % MOVES.length)
-}
-
-function onKeyDown(e) {
-  if (battle.phase === 'menu') return
-  const key = e.key
-
-  if (key === 'ArrowLeft' || key === 'q' || key === 'Q') {
-    e.preventDefault()
-    cycleMove(-1)
+function handleSpace() {
+  if (screen.value === 'menu' || screen.value === 'map' || screen.value === 'upgrade') return
+  if (screen.value === 'runWin') {
+    resetRun()
+    goMap()
     return
   }
-  if (key === 'ArrowRight' || key === 'e' || key === 'E') {
-    e.preventDefault()
-    cycleMove(1)
-    return
-  }
-  if (key === 'ArrowUp') {
-    e.preventDefault()
-    cycleMove(-3)
-    return
-  }
-  if (key === 'ArrowDown') {
-    e.preventDefault()
-    cycleMove(3)
-    return
-  }
+  if (!inBattle.value) return
 
-  if (/^[1-6]$/.test(key) && battle.phase === 'pick') {
-    e.preventDefault()
-    onSelectMove(Number(key) - 1)
-    return
-  }
-
-  if (key === ' ' || key === 'Enter') {
-    e.preventDefault()
-    if (battle.phase === 'pick') startAbility()
-    else if (battle.phase === 'timing') timingRef.value?.lock()
-    else if (battle.phase === 'playerShow' || battle.phase === 'rivalShow') onContinue()
-    else if (battle.phase === 'matchEnd') {
-      onRestart()
-      onStartFromMenu()
+  if (battle.phase === 'pick') startAbility()
+  else if (battle.phase === 'timing') timingRef.value?.lock()
+  else if (battle.phase === 'playerShow' || battle.phase === 'rivalShow') onContinue()
+  else if (battle.phase === 'matchEnd') {
+    if (battle.outcome === 'lose') {
+      resetRun()
+      goMenu()
+    } else if (battle.outcome === 'win') {
+      onWinFlow()
     }
   }
 }
 
-onMounted(() => window.addEventListener('keydown', onKeyDown))
-onBeforeUnmount(() => window.removeEventListener('keydown', onKeyDown))
+function onKeyDown(e) {
+  if (e.repeat) return
+
+  if (e.key === ' ' || e.key === 'Enter') {
+    if (spaceDown.value) {
+      e.preventDefault()
+      return
+    }
+    spaceDown.value = true
+    e.preventDefault()
+    handleSpace()
+    return
+  }
+
+  if (screen.value !== 'battle' || battle.phase !== 'pick') return
+
+  if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A' || e.key === 'q' || e.key === 'Q') {
+    e.preventDefault()
+    onSelectMove(moveIndex.value - 1)
+  } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D' || e.key === 'e' || e.key === 'E') {
+    e.preventDefault()
+    onSelectMove(moveIndex.value + 1)
+  } else if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
+    e.preventDefault()
+    onSelectMove(moveIndex.value - 3)
+  } else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') {
+    e.preventDefault()
+    onSelectMove(moveIndex.value + 3)
+  } else if (/^[1-6]$/.test(e.key)) {
+    e.preventDefault()
+    onSelectMove(Number(e.key) - 1)
+  }
+}
+
+function onKeyUp(e) {
+  if (e.key === ' ' || e.key === 'Enter') spaceDown.value = false
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', onKeyDown)
+  window.addEventListener('keyup', onKeyUp)
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKeyDown)
+  window.removeEventListener('keyup', onKeyUp)
+})
 
 watch(
   () => battle.phase,
@@ -206,22 +268,57 @@ watch(
     />
 
     <AuraFloats :event="floatEvent" />
-    <MainMenu v-if="battle.phase === 'menu'" @start="onStartFromMenu" />
 
-    <div v-if="battle.phase !== 'menu'" class="overlay">
+    <MainMenu
+      v-if="screen === 'menu'"
+      @start="() => { resetRun(); goMap() }"
+    />
+
+    <RunMap
+      v-if="screen === 'map'"
+      :run="run"
+      @fight="startFight"
+      @menu="goMenu"
+    />
+
+    <UpgradePick
+      v-if="screen === 'upgrade'"
+      :choices="upgradeChoices"
+      title="¡SOY MÁS FAME!"
+      @pick="onUpgradePick"
+    />
+
+    <div v-if="screen === 'runWin'" class="banner win">
+      <h1>¡SOY MÁS FAME!</h1>
+      <p>Completaste la ruta. Fame {{ run.fame }}</p>
+      <button type="button" @click="() => { resetRun(); goMap() }">Nueva ruta <kbd>SPACE</kbd></button>
+    </div>
+
+    <div v-if="screen === 'battle' && battle.phase === 'matchEnd' && battle.outcome === 'lose'" class="banner lose">
+      <h1>PERDISTE</h1>
+      <p>Se te acabó el aura. Punto.</p>
+      <button type="button" @click="() => { resetRun(); goMenu() }">Menú <kbd>SPACE</kbd></button>
+    </div>
+
+    <div v-if="screen === 'battle'" class="overlay">
       <BattleHud
         :phase="battle.phase"
         :turn="battle.turn"
         :player-aura="battle.playerAura"
         :rival-aura="battle.rivalAura"
+        :player-max="battle.playerMax"
+        :rival-max="battle.rivalMax"
         :message="battle.message"
         :rival-name="battle.rival.name"
         :last-result="battle.lastResult"
         :move-index="moveIndex"
+        :outcome="battle.outcome"
+        :floor="run.floor + 1"
+        :max-floors="run.maxFloors"
         @select-move="onSelectMove"
         @attack="startAbility"
         @continue="onContinue"
-        @restart="() => { onRestart(); onStartFromMenu() }"
+        @restart="() => { resetRun(); goMenu() }"
       />
 
       <div v-if="battle.phase === 'timing'" class="timing-wrap">
@@ -256,5 +353,44 @@ watch(
   display: flex;
   justify-content: center;
   padding-bottom: 0.5rem;
+}
+.banner {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-content: center;
+  gap: 0.6rem;
+  text-align: center;
+  pointer-events: auto;
+  padding: 1rem;
+}
+.banner.lose {
+  background: rgba(40, 0, 10, 0.78);
+}
+.banner.win {
+  background: rgba(20, 30, 10, 0.78);
+}
+.banner h1 {
+  font-size: clamp(3rem, 10vw, 5rem);
+  margin: 0;
+}
+.banner.lose h1 {
+  color: #ff6b6b;
+}
+.banner.win h1 {
+  color: #ffd166;
+}
+.banner p {
+  color: #d7e0f5;
+  margin: 0 0 0.6rem;
+}
+.banner button {
+  justify-self: center;
+  border-radius: 14px;
+  padding: 0.85rem 1.3rem;
+  background: linear-gradient(135deg, #4cc9f0, #80ed99);
+  color: #041018;
+  font-weight: 800;
 }
 </style>

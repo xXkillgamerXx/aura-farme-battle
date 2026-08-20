@@ -67,18 +67,18 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
       <div class="keys">
         <div><kbd>←</kbd><kbd>→</kbd> elegir habilidad</div>
-        <div><kbd>SPACE</kbd> usar / timing / continuar</div>
-        <div>Por turnos: tú atacas → luego el rival</div>
+        <div><kbd>SPACE</kbd> una vez (no mantengas)</div>
+        <div>Mapa roguelite · mejoras · 5 peleas</div>
       </div>
 
       <div v-if="showHowto" class="howto">
         <h2>Cómo se juega</h2>
         <ol>
-          <li>Posiciones fijas, como Pokémon.</li>
-          <li>Elige una habilidad (click o flechas).</li>
-          <li>SPACE y clava la barra: ICÓNICO = más daño.</li>
-          <li>Luego ataca el rival automáticamente.</li>
-          <li>Gana quien deje al otro en 0 de aura.</li>
+          <li>Mapa: entra a la pelea actual.</li>
+          <li>← → selecciona habilidad. SPACE la usa.</li>
+          <li>Barra: ICÓNICO = más daño (a veces x2).</li>
+          <li>Si ganas: “SOY MÁS FAME” y eliges mejora.</li>
+          <li>Si se te acaba el aura: PERDISTE. Punto.</li>
         </ol>
         <p class="close-hint">ESC o SPACE para cerrar</p>
       </div>

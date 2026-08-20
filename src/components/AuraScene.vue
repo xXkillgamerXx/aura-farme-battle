@@ -50,7 +50,7 @@ watch(
     }
     if (fx.type === 'move') {
       api.setAttacking(true)
-      api.triggerMove(fx.who, fx.moveId, fx.intensity ?? 1)
+      api.triggerMove(fx.who, fx.moveId, fx.intensity ?? 1, fx.hits ?? 1)
     }
     if (fx.type === 'aura') {
       api.showAuraBurst(fx.who, fx.amount)

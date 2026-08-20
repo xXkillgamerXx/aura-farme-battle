@@ -108,9 +108,13 @@ export function createBattleScene(canvas) {
   let flash = 0
   let shake = 0
   let crowdEnergy = 0.5
+  let lunge = null // { who, t, dur, hits, homeX }
 
   const clock = new THREE.Clock()
   let running = true
+
+  const PLAYER_HOME = -1.85
+  const RIVAL_HOME = 1.85
 
   function resize() {
     const w = canvas.clientWidth
@@ -125,11 +129,13 @@ export function createBattleScene(canvas) {
     crowdEnergy = v
   }
 
-  function triggerMove(who, moveId, intensity = 1) {
+  function triggerMove(who, moveId, intensity = 1, hits = 1) {
     const f = who === 'player' ? player : rival
     playPose(f, moveId, intensity)
     flash = 1
     shake = 0.14
+    const homeX = who === 'player' ? PLAYER_HOME : RIVAL_HOME
+    lunge = { who, t: 0, dur: hits > 1 ? 0.85 : 0.45, hits, homeX, moveId, intensity }
   }
 
   function showAuraBurst(who, amount) {
@@ -163,11 +169,14 @@ export function createBattleScene(canvas) {
   function resetPoses() {
     playPose(player, 'idle', 1)
     playPose(rival, 'idle', 1)
+    lunge = null
+    player.position.x = PLAYER_HOME
+    rival.position.x = RIVAL_HOME
   }
 
   function resetPositions() {
-    player.position.set(-1.85, 0, 0.35)
-    rival.position.set(1.85, 0, 0.35)
+    player.position.set(PLAYER_HOME, 0, 0.35)
+    rival.position.set(RIVAL_HOME, 0, 0.35)
     player.userData.facing = 0.55
     rival.userData.facing = -0.55
     resetPoses()
@@ -188,6 +197,31 @@ export function createBattleScene(canvas) {
     if (!running) return
     const dt = Math.min(clock.getDelta(), 0.05)
     const time = clock.elapsedTime
+
+    if (lunge) {
+      lunge.t += dt
+      const f = lunge.who === 'player' ? player : rival
+      const dir = lunge.who === 'player' ? 1 : -1
+      const p = Math.min(1, lunge.t / lunge.dur)
+      // forward then back; double hit = two pulses
+      let wave
+      if (lunge.hits > 1) {
+        wave = Math.sin(p * Math.PI * 2)
+      } else {
+        wave = Math.sin(p * Math.PI)
+      }
+      f.position.x = lunge.homeX + dir * 1.55 * Math.max(0, wave)
+      if (p >= 0.5 && lunge.hits > 1 && !lunge.secondPose) {
+        lunge.secondPose = true
+        playPose(f, lunge.moveId, lunge.intensity * 1.15)
+        flash = 1
+        shake = 0.2
+      }
+      if (p >= 1) {
+        f.position.x = lunge.homeX
+        lunge = null
+      }
+    }
 
     ;[player, rival].forEach((f) => {
       const s = f.userData.aura.scale.x
