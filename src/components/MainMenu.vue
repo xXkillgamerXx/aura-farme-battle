@@ -66,8 +66,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       </nav>
 
       <div class="keys">
-        <div><kbd>←</kbd><kbd>→</kbd> elegir habilidad</div>
-        <div><kbd>SPACE</kbd> una vez (no mantengas)</div>
+        <div class="desk"><kbd>←</kbd><kbd>→</kbd> elegir · <kbd>SPACE</kbd> usar</div>
+        <div class="mob">En móvil: toca habilidades y USAR BAILE</div>
         <div>Mapa roguelite · mejoras · 5 peleas</div>
       </div>
 
@@ -93,7 +93,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   z-index: 20;
   display: grid;
   place-items: center;
-  padding: 1.25rem;
+  padding: max(1rem, var(--safe-top)) max(1rem, var(--safe-right)) max(1rem, var(--safe-bottom))
+    max(1rem, var(--safe-left));
+  overflow: auto;
   background:
     radial-gradient(ellipse at 30% 20%, rgba(76, 201, 240, 0.18), transparent 45%),
     radial-gradient(ellipse at 70% 80%, rgba(247, 37, 133, 0.16), transparent 40%),
@@ -153,7 +155,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   gap: 0.75rem;
   width: 100%;
   text-align: left;
-  padding: 0.85rem 0.95rem;
+  padding: 0.95rem 0.95rem;
+  min-height: 52px;
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid transparent;
@@ -233,5 +236,23 @@ kbd {
   margin: 0.7rem 0 0;
   color: var(--muted);
   font-size: 0.75rem;
+}
+
+.mob {
+  display: none;
+}
+@media (max-width: 700px) {
+  .desk {
+    display: none;
+  }
+  .mob {
+    display: block;
+  }
+  .display {
+    font-size: clamp(2.8rem, 16vw, 3.6rem);
+  }
+  .card {
+    padding: 1.2rem 1rem 1.1rem;
+  }
 }
 </style>

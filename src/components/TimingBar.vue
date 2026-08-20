@@ -94,7 +94,8 @@ defineExpose({ start, stop, lock })
 <template>
   <div class="timing" :style="{ '--accent': accent }">
     <div class="label">
-      Ritmo de <strong>{{ move?.name || 'baile' }}</strong> — SPACE
+      Ritmo de <strong>{{ move?.name || 'baile' }}</strong>
+      <span class="spc"> — SPACE</span>
     </div>
     <div class="tiers">
       <span>CRINGE</span>
@@ -125,8 +126,8 @@ defineExpose({ start, stop, lock })
 <style scoped>
 .timing {
   display: grid;
-  gap: 0.55rem;
-  padding: 0.95rem 1rem;
+  gap: 0.5rem;
+  padding: 0.85rem 0.9rem;
   border-radius: 16px;
   background: var(--panel);
   border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
@@ -136,7 +137,7 @@ defineExpose({ start, stop, lock })
 }
 
 .label {
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   color: var(--muted);
   text-align: center;
 }
@@ -147,8 +148,8 @@ defineExpose({ start, stop, lock })
 .tiers {
   display: grid;
   grid-template-columns: repeat(6, 1fr);
-  gap: 0.2rem;
-  font-size: 0.62rem;
+  gap: 0.15rem;
+  font-size: 0.58rem;
   color: var(--muted);
   text-align: center;
 }
@@ -159,11 +160,12 @@ defineExpose({ start, stop, lock })
 
 .track {
   position: relative;
-  height: 30px;
+  height: 34px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.08);
   overflow: hidden;
   cursor: pointer;
+  touch-action: manipulation;
 }
 
 .sweet {
@@ -189,15 +191,17 @@ defineExpose({ start, stop, lock })
 .live {
   text-align: center;
   font-weight: 700;
-  font-size: 0.95rem;
+  font-size: 0.9rem;
 }
 
 .lock {
   border-radius: 12px;
-  padding: 0.7rem 1rem;
+  padding: 0.85rem 1rem;
+  min-height: 48px;
   background: linear-gradient(135deg, var(--accent), #ff9f1c);
   color: #1a1200;
   font-weight: 700;
+  width: 100%;
 }
 
 .lock kbd {
@@ -206,5 +210,19 @@ defineExpose({ start, stop, lock })
   border-radius: 5px;
   background: rgba(0, 0, 0, 0.12);
   font-size: 0.7rem;
+}
+
+@media (max-width: 700px) {
+  .tiers {
+    font-size: 0.52rem;
+  }
+  .spc,
+  .lock kbd {
+    display: none;
+  }
+  .lock::after {
+    content: ' (toca)';
+    font-weight: 600;
+  }
 }
 </style>

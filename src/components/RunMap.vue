@@ -66,14 +66,16 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   z-index: 20;
   display: grid;
   place-items: center;
-  padding: 1rem;
+  padding: max(0.75rem, var(--safe-top)) max(0.75rem, var(--safe-right))
+    max(0.75rem, var(--safe-bottom)) max(0.75rem, var(--safe-left));
+  overflow: auto;
   background: rgba(6, 10, 20, 0.72);
   backdrop-filter: blur(8px);
   pointer-events: auto;
 }
 .card {
   width: min(480px, 100%);
-  padding: 1.4rem;
+  padding: 1.2rem 1rem;
   border-radius: 20px;
   background: rgba(10, 16, 32, 0.92);
   border: 1px solid rgba(255, 255, 255, 0.12);
@@ -138,7 +140,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 .go {
   width: 100%;
   border-radius: 14px;
-  padding: 0.9rem;
+  padding: 0.95rem;
+  min-height: 48px;
   background: linear-gradient(135deg, #4cc9f0, #80ed99);
   color: #041018;
   font-weight: 800;
@@ -147,7 +150,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   width: 100%;
   margin-top: 0.45rem;
   border-radius: 12px;
-  padding: 0.65rem;
+  padding: 0.75rem;
+  min-height: 44px;
   background: transparent;
   color: var(--muted);
   border: 1px solid var(--line);

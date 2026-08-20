@@ -400,6 +400,8 @@ watch(
   position: relative;
   width: 100%;
   height: 100%;
+  height: 100dvh;
+  overflow: hidden;
 }
 .canvas-wrap {
   position: absolute;
@@ -410,17 +412,23 @@ watch(
   inset: 0;
   display: flex;
   flex-direction: column;
-  padding: clamp(0.6rem, 1.5vw, 1rem);
+  padding:
+    max(0.45rem, var(--safe-top))
+    max(0.45rem, var(--safe-right))
+    max(0.45rem, var(--safe-bottom))
+    max(0.45rem, var(--safe-left));
   pointer-events: none;
   z-index: 5;
+  min-height: 0;
 }
 .timing-wrap {
   pointer-events: auto;
   display: flex;
   justify-content: center;
   width: 100%;
-  padding: 0 0 0.35rem;
+  padding: 0.25rem 0 max(0.35rem, var(--safe-bottom));
   margin-top: auto;
+  flex-shrink: 0;
 }
 .banner {
   position: absolute;
@@ -431,7 +439,7 @@ watch(
   gap: 0.6rem;
   text-align: center;
   pointer-events: auto;
-  padding: 1rem;
+  padding: max(1rem, var(--safe-top)) 1rem max(1rem, var(--safe-bottom));
 }
 .banner.lose {
   background: rgba(40, 0, 10, 0.78);
@@ -440,8 +448,10 @@ watch(
   background: rgba(20, 30, 10, 0.78);
 }
 .banner h1 {
-  font-size: clamp(3rem, 10vw, 5rem);
+  font-size: clamp(2.4rem, 12vw, 5rem);
   margin: 0;
+  line-height: 0.95;
+  padding: 0 0.5rem;
 }
 .banner.lose h1 {
   color: #ff6b6b;
@@ -452,13 +462,26 @@ watch(
 .banner p {
   color: #d7e0f5;
   margin: 0 0 0.6rem;
+  padding: 0 1rem;
+  font-size: 0.95rem;
 }
 .banner button {
   justify-self: center;
   border-radius: 14px;
-  padding: 0.85rem 1.3rem;
+  padding: 0.95rem 1.4rem;
+  min-height: 48px;
   background: linear-gradient(135deg, #4cc9f0, #80ed99);
   color: #041018;
   font-weight: 800;
+}
+
+@media (max-width: 700px) and (orientation: portrait) {
+  .overlay {
+    padding:
+      max(0.35rem, var(--safe-top))
+      0.4rem
+      max(0.35rem, var(--safe-bottom))
+      0.4rem;
+  }
 }
 </style>
