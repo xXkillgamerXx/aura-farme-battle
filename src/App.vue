@@ -383,8 +383,7 @@ watch(
   inset: 0;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  padding: clamp(0.75rem, 2vw, 1.4rem);
+  padding: clamp(0.6rem, 1.5vw, 1rem);
   pointer-events: none;
   z-index: 5;
 }
@@ -392,7 +391,9 @@ watch(
   pointer-events: auto;
   display: flex;
   justify-content: center;
-  padding-bottom: 0.5rem;
+  width: 100%;
+  padding: 0 0 0.35rem;
+  margin-top: auto;
 }
 .banner {
   position: absolute;
