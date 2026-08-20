@@ -7,10 +7,11 @@ export function createRun() {
   })
 
   return {
-    floor: 0, // index of current fight node
+    floor: 0,
     maxFloors: RIVALS.length,
     fame: 0,
     maxHp: 100,
+    startAura: 0,
     moveBonus,
     iconicBonus: 0,
     noSelfCringe: false,

@@ -6,9 +6,9 @@ const props = defineProps({
   phase: String,
   turn: Number,
   playerAura: Number,
-  rivalAura: Number,
-  playerMax: { type: Number, default: 100 },
-  rivalMax: { type: Number, default: 100 },
+  playerCringe: Number,
+  auraMax: { type: Number, default: 100 },
+  cringeMax: { type: Number, default: 100 },
   message: String,
   rivalName: String,
   lastResult: Object,
@@ -20,8 +20,8 @@ const props = defineProps({
 
 defineEmits(['select-move', 'attack', 'continue', 'restart'])
 
-const playerPct = computed(() => (props.playerAura / props.playerMax) * 100)
-const rivalPct = computed(() => (props.rivalAura / props.rivalMax) * 100)
+const auraPct = computed(() => (props.playerAura / props.auraMax) * 100)
+const cringePct = computed(() => (props.playerCringe / props.cringeMax) * 100)
 </script>
 
 <template>
@@ -37,24 +37,26 @@ const rivalPct = computed(() => (props.rivalAura / props.rivalMax) * 100)
           <span v-else-if="phase === 'timing'">Ritmo</span>
           <span v-else-if="phase === 'matchEnd' && outcome === 'win'">Victoria</span>
           <span v-else-if="phase === 'matchEnd' && outcome === 'lose'">Derrota</span>
-          <span v-else>Combate</span>
+          <span v-else>vs {{ rivalName }}</span>
         </div>
       </header>
 
       <div class="meters">
-        <div class="meter player">
+        <div class="meter aura">
           <div class="meta">
-            <strong>Tú</strong>
-            <span>{{ Math.round(playerAura) }}/{{ playerMax }}</span>
+            <strong>AURA</strong>
+            <span>{{ Math.round(playerAura) }}/{{ auraMax }}</span>
           </div>
-          <div class="bar"><i :style="{ width: playerPct + '%' }" /></div>
+          <div class="bar"><i :style="{ width: auraPct + '%' }" /></div>
+          <small>Bien → se llena · llena = ganas</small>
         </div>
-        <div class="meter rival">
+        <div class="meter cringe">
           <div class="meta">
-            <strong>{{ rivalName }}</strong>
-            <span>{{ Math.round(rivalAura) }}/{{ rivalMax }}</span>
+            <strong>CRINGE</strong>
+            <span>{{ Math.round(playerCringe) }}/{{ cringeMax }}</span>
           </div>
-          <div class="bar"><i :style="{ width: rivalPct + '%' }" /></div>
+          <div class="bar"><i :style="{ width: cringePct + '%' }" /></div>
+          <small>Mal → se llena · llena = pierdes</small>
         </div>
       </div>
 
@@ -64,11 +66,11 @@ const rivalPct = computed(() => (props.rivalAura / props.rivalMax) * 100)
         <span :style="{ color: lastResult.tier?.color }">{{ lastResult.tier?.label }}</span>
         <span>{{ lastResult.move?.name }}</span>
         <span v-if="lastResult.hits > 1" class="x2">x2 baile</span>
-        <span class="dmg">-{{ lastResult.damage }} menos aura</span>
+        <span v-if="lastResult.auraGain > 0" class="up">+{{ lastResult.auraGain }} aura</span>
+        <span v-if="lastResult.cringeGain > 0" class="dmg">+{{ lastResult.cringeGain }} cringe</span>
       </div>
     </div>
 
-    <!-- Menú de ataques: abajo, centrado, ancho completo -->
     <div v-if="phase === 'pick'" class="attack-dock">
       <div class="moves">
         <button
@@ -163,6 +165,12 @@ const rivalPct = computed(() => (props.rivalAura / props.rivalMax) * 100)
   border: 1px solid var(--line);
   backdrop-filter: blur(10px);
 }
+.meter small {
+  display: block;
+  margin-top: 0.35rem;
+  color: var(--muted);
+  font-size: 0.68rem;
+}
 .meta {
   display: flex;
   justify-content: space-between;
@@ -171,7 +179,7 @@ const rivalPct = computed(() => (props.rivalAura / props.rivalMax) * 100)
   gap: 0.4rem;
 }
 .bar {
-  height: 10px;
+  height: 12px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.08);
   overflow: hidden;
@@ -180,13 +188,13 @@ const rivalPct = computed(() => (props.rivalAura / props.rivalMax) * 100)
   display: block;
   height: 100%;
   border-radius: inherit;
-  transition: width 0.25s ease;
+  transition: width 0.3s ease;
 }
-.player .bar i {
+.aura .bar i {
   background: linear-gradient(90deg, #4cc9f0, #80ed99);
 }
-.rival .bar i {
-  background: linear-gradient(90deg, #f72585, #c77dff);
+.cringe .bar i {
+  background: linear-gradient(90deg, #f72585, #ff6b6b);
 }
 
 .message {
@@ -206,6 +214,10 @@ const rivalPct = computed(() => (props.rivalAura / props.rivalMax) * 100)
 }
 .dmg {
   color: #ff6b6b;
+  font-weight: 700;
+}
+.up {
+  color: #80ed99;
   font-weight: 700;
 }
 .x2 {

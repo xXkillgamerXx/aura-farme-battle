@@ -78,7 +78,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           <li>← → selecciona habilidad. SPACE la usa.</li>
           <li>Barra: ICÓNICO = más daño (a veces x2).</li>
           <li>Si ganas: “SOY EL MÁS PERRÓN” y eliges mejora.</li>
-          <li>Si se te acaba el aura: PERDISTE. Punto.</li>
+          <li>AURA se llena si bailas bien. CRINGE si fallas — CRINGE lleno = PERDISTE.</li>
         </ol>
         <p class="close-hint">ESC o SPACE para cerrar</p>
       </div>

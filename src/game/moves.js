@@ -106,17 +106,17 @@ export const UPGRADES = [
   },
   {
     id: 'hp',
-    name: 'Aura Tank',
-    desc: '+20 HP máximo y curación completa',
+    name: 'Aura Headstart',
+    desc: 'Empiezas la pelea con +20 AURA',
     apply: (run) => {
-      run.maxHp += 20
+      run.startAura = (run.startAura || 0) + 20
       run.healAfter = true
     },
   },
   {
     id: 'crit',
     name: 'Iconic Boost',
-    desc: 'Timing ICÓNICO hace +25% vergüenza extra',
+    desc: 'Timing ICÓNICO llena más AURA',
     apply: (run) => {
       run.iconicBonus += 0.25
     },
@@ -124,7 +124,7 @@ export const UPGRADES = [
   {
     id: 'shield',
     name: 'No Cringe',
-    desc: 'Los misses ya no te dan vergüenza a ti',
+    desc: 'Los misses llenan menos CRINGE',
     apply: (run) => {
       run.noSelfCringe = true
     },

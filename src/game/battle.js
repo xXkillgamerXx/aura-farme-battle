@@ -13,19 +13,45 @@ export function timingTier(accuracy) {
   return { id: 'miss', label: 'CRINGE', mult: 0.15, color: '#ff6b6b', crowd: 'boo' }
 }
 
+/** Cuánto llena cada barra según el timing */
+function meterGains(tierId, power, run) {
+  const p = power / 24
+  switch (tierId) {
+    case 'perfect': {
+      let aura = Math.round(22 * p)
+      if (run.iconicBonus) aura = Math.round(aura * (1 + run.iconicBonus))
+      return { aura, cringe: 0 }
+    }
+    case 'great':
+      return { aura: Math.round(16 * p), cringe: Math.round(2 * p) }
+    case 'ok':
+      return { aura: Math.round(10 * p), cringe: Math.round(7 * p) }
+    case 'weak':
+      return { aura: Math.round(3 * p), cringe: Math.round(14 * p) }
+    default: // miss
+      return {
+        aura: 0,
+        cringe: run.noSelfCringe ? Math.round(8 * p) : Math.round(22 * p),
+      }
+  }
+}
+
 export function createBattle(rival, run) {
   return {
     phase: 'pick',
     turn: 1,
-    playerAura: run.maxHp,
-    rivalAura: rival.hp ?? 100,
-    rivalMax: rival.hp ?? 100,
-    playerMax: run.maxHp,
+    playerAura: Math.min(run.startAura || 0, run.maxHp || 100),
+    playerCringe: 0,
+    auraMax: run.maxHp || 100,
+    cringeMax: 100,
+    // rival solo para UI / presión
+    rivalAura: 0,
+    rivalMax: 100,
     selectedMove: null,
     moveIndex: 0,
     lastResult: null,
     outcome: null,
-    message: `${rival.name} en la plaza. Elige baile (← →).`,
+    message: `${rival.name} en la plaza. Llena AURA. Evita CRINGE.`,
     rival,
     log: [],
   }
@@ -38,7 +64,7 @@ export function pickMove(state, moveId) {
     ...state,
     phase: 'timing',
     selectedMove: move,
-    message: `Baila ${move.name} — SPACE en tu ritmo`,
+    message: `Baila ${move.name} — bien = AURA · mal = CRINGE`,
   }
 }
 
@@ -47,59 +73,61 @@ export function resolvePlayerAttack(state, accuracy, run) {
 
   const move = state.selectedMove
   const tier = timingTier(accuracy)
-  const base = getMovePower(run, move)
-  let mult = tier.mult
-  if (tier.id === 'perfect') mult += run.iconicBonus || 0
-  let shame = Math.round(base * mult) // vergüenza al rival
-
-  let selfShame = 0
-  if (tier.id === 'miss') {
-    shame = Math.max(1, Math.round(base * 0.12))
-    if (!run.noSelfCringe) selfShame = Math.round(base * 0.3)
-  }
+  const power = getMovePower(run, move)
+  let { aura: auraGain, cringe: cringeGain } = meterGains(tier.id, power, run)
 
   let hits = 1
-  if (tier.id === 'perfect' && Math.random() < 0.45) {
+  if (tier.id === 'perfect' && Math.random() < 0.4) {
     hits = 2
-    shame = Math.round(shame * 1.35)
+    auraGain = Math.round(auraGain * 1.35)
   }
 
-  const rivalAura = clamp(state.rivalAura - shame, 0, state.rivalMax)
-  const playerAura = clamp(state.playerAura - selfShame, 0, state.playerMax)
-  const won = rivalAura <= 0
-  const lost = playerAura <= 0
+  const playerAura = clamp(state.playerAura + auraGain, 0, state.auraMax)
+  const playerCringe = clamp(state.playerCringe + cringeGain, 0, state.cringeMax)
+
+  const won = playerAura >= state.auraMax
+  const lost = playerCringe >= state.cringeMax
+
+  let msg
+  if (won) msg = WIN_LINE
+  else if (lost) msg = LOSE_LINE
+  else if (auraGain > cringeGain) msg = `${move.name}: +${auraGain} AURA (${tier.label})`
+  else if (cringeGain > 0) msg = `${move.name}: +${cringeGain} CRINGE (${tier.label})`
+  else msg = `${move.name} (${tier.label})`
 
   return {
     ...state,
     phase: won || lost ? 'matchEnd' : 'playerShow',
     outcome: won ? 'win' : lost ? 'lose' : null,
     playerAura,
-    rivalAura,
+    playerCringe,
     timingScore: accuracy,
     lastResult: {
       side: 'player',
       move,
       accuracy,
       tier,
-      damage: shame,
-      selfDamage: selfShame,
+      auraGain,
+      cringeGain,
+      damage: auraGain,
+      selfDamage: cringeGain,
       hits,
       crowd: tier.crowd,
     },
-    message: won
-      ? WIN_LINE
-      : lost
-        ? LOSE_LINE
-        : `${move.name} → -${shame} menos aura (${tier.label})`,
-    log: [...state.log, { turn: state.turn, side: 'player', move: move.name, damage: shame, tier: tier.id }],
+    message: msg,
+    log: [
+      ...state.log,
+      { turn: state.turn, side: 'player', move: move.name, auraGain, cringeGain, tier: tier.id },
+    ],
   }
 }
 
+/** El rival baila bien → te llena CRINGE (y un poco su “aura” de presión) */
 export function resolveRivalAttack(state) {
-  if (state.rivalAura <= 0) {
+  if (state.playerAura >= state.auraMax) {
     return { ...state, phase: 'matchEnd', outcome: 'win', message: WIN_LINE }
   }
-  if (state.playerAura <= 0) {
+  if (state.playerCringe >= state.cringeMax) {
     return { ...state, phase: 'matchEnd', outcome: 'lose', message: LOSE_LINE }
   }
 
@@ -107,44 +135,65 @@ export function resolveRivalAttack(state) {
   const roll = 0.35 + state.rival.difficulty * 0.5 + Math.random() * 0.2
   const accuracy = clamp(roll, 0.15, 0.98)
   const tier = timingTier(accuracy)
-  let shame = Math.round(move.power * tier.mult * (0.85 + state.rival.difficulty * 0.3))
-  let hits = 1
-  if (tier.id === 'perfect' && Math.random() < 0.35) {
-    hits = 2
-    shame = Math.round(shame * 1.25)
-  }
-  if (tier.id === 'miss') shame = Math.max(1, Math.round(move.power * 0.15))
 
-  const playerAura = clamp(state.playerAura - shame, 0, state.playerMax)
-  const lost = playerAura <= 0
+  // Si el rival baila bien, te mete cringe; si falla, poco
+  let cringeGain = 0
+  let rivalAuraGain = 0
+  if (tier.id === 'perfect' || tier.id === 'great') {
+    cringeGain = Math.round(14 + state.rival.difficulty * 16)
+    rivalAuraGain = Math.round(12 + state.rival.difficulty * 10)
+  } else if (tier.id === 'ok') {
+    cringeGain = Math.round(8 + state.rival.difficulty * 8)
+    rivalAuraGain = 6
+  } else if (tier.id === 'weak') {
+    cringeGain = Math.round(4 + state.rival.difficulty * 4)
+  } else {
+    cringeGain = 2
+  }
+
+  let hits = 1
+  if (tier.id === 'perfect' && Math.random() < 0.3) {
+    hits = 2
+    cringeGain = Math.round(cringeGain * 1.25)
+  }
+
+  const playerCringe = clamp(state.playerCringe + cringeGain, 0, state.cringeMax)
+  const rivalAura = clamp(state.rivalAura + rivalAuraGain, 0, state.rivalMax)
+  const lost = playerCringe >= state.cringeMax
 
   return {
     ...state,
     phase: lost ? 'matchEnd' : 'rivalShow',
     outcome: lost ? 'lose' : null,
-    playerAura,
+    playerCringe,
+    rivalAura,
     lastResult: {
       side: 'rival',
       move,
       accuracy,
       tier,
-      damage: shame,
+      auraGain: 0,
+      cringeGain,
+      damage: cringeGain,
       selfDamage: 0,
       hits,
       crowd: tier.crowd,
     },
     message: lost
       ? LOSE_LINE
-      : `${state.rival.name} bailó ${move.name} → -${shame} menos aura`,
-    log: [...state.log, { turn: state.turn, side: 'rival', move: move.name, damage: shame, tier: tier.id }],
+      : `${state.rival.name}: +${cringeGain} CRINGE a ti (${tier.label})`,
+    log: [
+      ...state.log,
+      { turn: state.turn, side: 'rival', move: move.name, cringeGain, tier: tier.id },
+    ],
   }
 }
 
 export function nextPlayerTurn(state) {
-  if (state.playerAura <= 0) {
+  if (state.playerCringe >= state.cringeMax) {
     return { ...state, phase: 'matchEnd', outcome: 'lose', message: LOSE_LINE }
   }
-  if (state.rivalAura <= 0) {
+  if (state.playerAura >= state.auraMax) {
     return { ...state, phase: 'matchEnd', outcome: 'win', message: WIN_LINE }
   }
   return {
@@ -153,7 +202,7 @@ export function nextPlayerTurn(state) {
     turn: state.turn + 1,
     selectedMove: null,
     lastResult: null,
-    message: `Turno ${state.turn + 1}. ← → baile · SPACE ritmo`,
+    message: `Turno ${state.turn + 1}. Llena AURA · no llenes CRINGE`,
   }
 }
 

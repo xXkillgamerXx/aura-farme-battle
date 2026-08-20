@@ -67,10 +67,7 @@ function goMap() {
 function startFight() {
   const rival = getRivalForFloor(run.floor)
   Object.assign(battle, createBattle(rival, run))
-  if (run.healAfter) {
-    battle.playerAura = run.maxHp
-    run.healAfter = false
-  }
+  run.healAfter = false
   moveIndex.value = 0
   screen.value = 'battle'
   bumpFx({ type: 'resetAll' })
@@ -112,31 +109,42 @@ function onTiming(accuracy) {
   // 2) crowd reacciona
   setTimeout(() => spawnCrowd(result.crowd || result.tier.crowd || 'meh'), 280)
 
-  // 3) luego efecto de vergüenza al rival
+  // 3) feedback de barras
   setTimeout(() => {
-    bumpFx({ type: 'shame', who: 'rival' })
-    bumpFx({ type: 'aura', who: 'rival', amount: -result.damage })
-    const r = sceneRef.value?.projectToScreen?.('rival') ?? { x: window.innerWidth * 0.7, y: 220 }
-    spawnFloat({
-      who: 'rival',
-      kind: 'down',
-      text: `-${result.damage} MENOS AURA`,
-      x: r.x,
-      y: r.y,
-    })
+    const mid = { x: window.innerWidth / 2, y: 160 }
+    if (result.auraGain > 0) {
+      bumpFx({ type: 'aura', who: 'player', amount: result.auraGain })
+      const p = sceneRef.value?.projectToScreen?.('player') ?? { x: 140, y: 220 }
+      spawnFloat({
+        who: 'player',
+        kind: 'up',
+        text: `+${result.auraGain} AURA`,
+        x: p.x,
+        y: p.y,
+      })
+    }
+    if (result.cringeGain > 0) {
+      bumpFx({ type: 'shame', who: 'player' })
+      spawnFloat({
+        who: 'player',
+        kind: 'down',
+        text: `+${result.cringeGain} CRINGE`,
+        x: mid.x,
+        y: mid.y + 40,
+      })
+    }
     if (result.hits > 1) {
       spawnFloat({
         who: 'player',
         kind: 'up',
         text: 'DOBLE BAILE',
-        x: window.innerWidth / 2,
+        x: mid.x,
         y: 120,
       })
     }
-    if (result.selfDamage) {
-      bumpFx({ type: 'shame', who: 'player' })
-      bumpFx({ type: 'aura', who: 'player', amount: -result.selfDamage })
-      spawnCrowd('boo')
+    // rival se siente eclipsado si tú llenaste aura
+    if (result.auraGain >= 12) {
+      bumpFx({ type: 'shame', who: 'rival' })
     }
   }, 650)
 }
@@ -160,12 +168,11 @@ function playRivalTurn() {
 
   setTimeout(() => {
     bumpFx({ type: 'shame', who: 'player' })
-    bumpFx({ type: 'aura', who: 'player', amount: -result.damage })
     const p = sceneRef.value?.projectToScreen?.('player') ?? { x: 140, y: 220 }
     spawnFloat({
       who: 'player',
       kind: 'down',
-      text: `-${result.damage} MENOS AURA`,
+      text: `+${result.cringeGain} CRINGE`,
       x: p.x,
       y: p.y,
     })
@@ -331,7 +338,7 @@ watch(
 
     <div v-if="screen === 'battle' && battle.phase === 'matchEnd' && battle.outcome === 'lose'" class="banner lose">
       <h1>PERDISTE</h1>
-      <p>Se te acabó el aura. Punto.</p>
+      <p>Se te llenó la barra de CRINGE. Punto.</p>
       <button type="button" @click="() => { resetRun(); goMenu() }">Menú <kbd>SPACE</kbd></button>
     </div>
 
@@ -340,9 +347,9 @@ watch(
         :phase="battle.phase"
         :turn="battle.turn"
         :player-aura="battle.playerAura"
-        :rival-aura="battle.rivalAura"
-        :player-max="battle.playerMax"
-        :rival-max="battle.rivalMax"
+        :player-cringe="battle.playerCringe"
+        :aura-max="battle.auraMax"
+        :cringe-max="battle.cringeMax"
         :message="battle.message"
         :rival-name="battle.rival.name"
         :last-result="battle.lastResult"

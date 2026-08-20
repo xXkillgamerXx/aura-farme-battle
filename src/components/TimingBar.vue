@@ -116,7 +116,7 @@ defineExpose({ start, stop, lock })
       <div class="needle" :style="{ left: pos * 100 + '%' }" />
     </div>
     <div class="live" :style="{ color: liveTier.color }">
-      {{ liveTier.label }} · x{{ liveTier.mult }} menos aura
+      {{ liveTier.label }} · bien = AURA · mal = CRINGE
     </div>
     <button class="lock" type="button" @click="lock">¡AHORA! <kbd>SPACE</kbd></button>
   </div>
