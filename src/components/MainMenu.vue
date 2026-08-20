@@ -66,19 +66,19 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       </nav>
 
       <div class="keys">
-        <div><kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> mover</div>
-        <div><kbd>Q</kbd><kbd>E</kbd> cambiar move</div>
-        <div><kbd>SPACE</kbd> atacar</div>
+        <div><kbd>←</kbd><kbd>→</kbd> elegir habilidad</div>
+        <div><kbd>SPACE</kbd> usar / timing / continuar</div>
+        <div>Por turnos: tú atacas → luego el rival</div>
       </div>
 
       <div v-if="showHowto" class="howto">
         <h2>Cómo se juega</h2>
         <ol>
-          <li>Muévete en la plaza con las flechas.</li>
-          <li>Elige un move con Q / E.</li>
-          <li>Acércate al rival y pulsa SPACE para atacar.</li>
-          <li>Clava el timing en la zona dorada (SPACE otra vez).</li>
-          <li>Más cerca = más aura. Cringe = pierdes.</li>
+          <li>Posiciones fijas, como Pokémon.</li>
+          <li>Elige una habilidad (click o flechas).</li>
+          <li>SPACE y clava la barra: ICÓNICO = más daño.</li>
+          <li>Luego ataca el rival automáticamente.</li>
+          <li>Gana quien deje al otro en 0 de aura.</li>
         </ol>
         <p class="close-hint">ESC o SPACE para cerrar</p>
       </div>

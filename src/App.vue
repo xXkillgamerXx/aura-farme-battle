@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import AuraScene from './components/AuraScene.vue'
 import BattleHud from './components/BattleHud.vue'
 import TimingBar from './components/TimingBar.vue'
@@ -9,8 +9,9 @@ import { MOVES } from './game/moves.js'
 import {
   createBattle,
   pickMove,
-  resolveTiming,
-  endRound,
+  resolvePlayerAttack,
+  resolveRivalAttack,
+  nextPlayerTurn,
   startBattle,
 } from './game/battle.js'
 
@@ -20,32 +21,7 @@ const floatEvent = ref(null)
 const timingRef = ref(null)
 const sceneRef = ref(null)
 const moveIndex = ref(0)
-const distance = ref(3)
-const keys = reactive({
-  ArrowUp: false,
-  ArrowDown: false,
-  ArrowLeft: false,
-  ArrowRight: false,
-  w: false,
-  a: false,
-  s: false,
-  d: false,
-})
-
 let rivalIndex = 0
-let distTimer = 0
-
-const input = computed(() => {
-  let x = 0
-  let z = 0
-  if (keys.ArrowLeft || keys.a) x -= 1
-  if (keys.ArrowRight || keys.d) x += 1
-  if (keys.ArrowUp || keys.w) z -= 1
-  if (keys.ArrowDown || keys.s) z += 1
-  return { x, z }
-})
-
-const canMove = computed(() => battle.phase === 'pick')
 
 function bumpFx(payload) {
   fx.value = { ...payload, t: Date.now() }
@@ -55,40 +31,23 @@ function spawnFloat(payload) {
   floatEvent.value = { ...payload, t: Date.now() }
 }
 
-function syncDistance() {
-  distance.value = sceneRef.value?.getDistance?.() ?? 3
-}
-
 function onSelectMove(i) {
   moveIndex.value = i
   battle.moveIndex = i
-  battle.message = `Move listo: ${MOVES[i].name}. SPACE para atacar.`
+  battle.message = `${MOVES[i].name} lista. SPACE para usar.`
 }
 
-function attackWithSelected() {
+function startAbility() {
   if (battle.phase !== 'pick') return
   const move = MOVES[moveIndex.value]
   if (!move) return
-  syncDistance()
-
-  // Dash + camera center first, then timing
-  bumpFx({ type: 'prepare' })
   Object.assign(battle, pickMove(battle, move.id))
-  battle.message = `¡Atacando con ${move.name}! Clava el timing`
   nextTick(() => timingRef.value?.start())
 }
 
-function onPick(moveId) {
-  // click only selects — attack with SPACE
-  const idx = MOVES.findIndex((m) => m.id === moveId)
-  if (idx >= 0) onSelectMove(idx)
-}
-
 function onTiming(accuracy) {
-  syncDistance()
-  const next = resolveTiming(battle, accuracy, distance.value)
+  const next = resolvePlayerAttack(battle, accuracy)
   Object.assign(battle, next)
-
   const result = next.lastResult
   if (!result) return
 
@@ -96,57 +55,71 @@ function onTiming(accuracy) {
     type: 'move',
     who: 'player',
     moveId: result.move.id,
-    intensity: Math.max(0.55, result.accuracy),
+    intensity: Math.max(0.5, result.accuracy),
   })
 
   setTimeout(() => {
-    bumpFx({
-      type: 'move',
-      who: 'rival',
-      moveId: result.rivalMove.id,
-      intensity: 0.85,
-    })
-  }, 320)
-
-  setTimeout(() => {
-    // Aura up/down bursts + floating numbers
-    bumpFx({ type: 'aura', who: 'player', amount: result.playerGain })
-    const p = sceneRef.value?.projectToScreen?.('player') ?? { x: 120, y: 220 }
-    spawnFloat({
-      who: 'player',
-      kind: result.playerGain >= 0 ? 'up' : 'down',
-      text: `${result.playerGain >= 0 ? '+' : ''}${result.playerGain} AURA`,
-      x: p.x,
-      y: p.y,
-    })
-  }, 520)
-
-  setTimeout(() => {
-    bumpFx({ type: 'aura', who: 'rival', amount: result.rivalGain })
-    const r = sceneRef.value?.projectToScreen?.('rival') ?? { x: window.innerWidth - 140, y: 220 }
+    // daño al rival = aura baja
+    bumpFx({ type: 'aura', who: 'rival', amount: -result.damage })
+    const r = sceneRef.value?.projectToScreen?.('rival') ?? { x: window.innerWidth * 0.7, y: 220 }
     spawnFloat({
       who: 'rival',
-      kind: result.rivalGain >= 0 ? 'up' : 'down',
-      text: `${result.rivalGain >= 0 ? '+' : ''}${result.rivalGain} AURA`,
+      kind: 'down',
+      text: `-${result.damage}`,
       x: r.x,
       y: r.y,
     })
-
-    if (result.crowdDelta) {
-      spawnFloat({
-        who: 'crowd',
-        kind: 'crowd',
-        text: `${result.crowdDelta > 0 ? '+' : ''}${result.crowdDelta} CROWD`,
-        x: window.innerWidth / 2,
-        y: 140,
-      })
+    spawnFloat({
+      who: 'player',
+      kind: result.tier.id === 'miss' ? 'down' : 'up',
+      text: result.tier.label,
+      x: (sceneRef.value?.projectToScreen?.('player') ?? { x: 140, y: 180 }).x,
+      y: 160,
+    })
+    if (result.selfDamage) {
+      bumpFx({ type: 'aura', who: 'player', amount: -result.selfDamage })
     }
-  }, 780)
+  }, 380)
+}
+
+function playRivalTurn() {
+  const next = resolveRivalAttack(battle)
+  Object.assign(battle, next)
+  const result = next.lastResult
+  if (!result || result.side !== 'rival') return
+
+  bumpFx({
+    type: 'move',
+    who: 'rival',
+    moveId: result.move.id,
+    intensity: 0.9,
+  })
+
+  setTimeout(() => {
+    bumpFx({ type: 'aura', who: 'player', amount: -result.damage })
+    const p = sceneRef.value?.projectToScreen?.('player') ?? { x: 140, y: 220 }
+    spawnFloat({
+      who: 'player',
+      kind: 'down',
+      text: `-${result.damage}`,
+      x: p.x,
+      y: p.y,
+    })
+  }, 350)
 }
 
 function onContinue() {
-  if (battle.phase === 'resolve') {
-    Object.assign(battle, endRound(battle))
+  if (battle.phase === 'playerShow') {
+    if (battle.rivalAura <= 0 || battle.playerAura <= 0) {
+      battle.phase = 'matchEnd'
+      return
+    }
+    // rival turn
+    playRivalTurn()
+    return
+  }
+  if (battle.phase === 'rivalShow') {
+    Object.assign(battle, nextPlayerTurn(battle))
     bumpFx({ type: 'reset' })
   }
 }
@@ -160,35 +133,35 @@ function onRestart() {
   rivalIndex += 1
   Object.assign(battle, createBattle(rivalIndex))
   moveIndex.value = 0
-  bumpFx({ type: 'resetAll' })
 }
 
 function cycleMove(dir) {
   if (battle.phase !== 'pick') return
-  const next = (moveIndex.value + dir + MOVES.length) % MOVES.length
-  onSelectMove(next)
+  onSelectMove((moveIndex.value + dir + MOVES.length) % MOVES.length)
 }
 
 function onKeyDown(e) {
-  const key = e.key
-  const lower = key.length === 1 ? key.toLowerCase() : key
-
-  if (key in keys || lower in keys) {
-    if (key in keys) keys[key] = true
-    if (lower in keys) keys[lower] = true
-    if (battle.phase === 'pick') e.preventDefault()
-  }
-
   if (battle.phase === 'menu') return
+  const key = e.key
 
-  if (key === 'q' || key === 'Q') {
+  if (key === 'ArrowLeft' || key === 'q' || key === 'Q') {
     e.preventDefault()
     cycleMove(-1)
     return
   }
-  if (key === 'e' || key === 'E') {
+  if (key === 'ArrowRight' || key === 'e' || key === 'E') {
     e.preventDefault()
     cycleMove(1)
+    return
+  }
+  if (key === 'ArrowUp') {
+    e.preventDefault()
+    cycleMove(-3)
+    return
+  }
+  if (key === 'ArrowDown') {
+    e.preventDefault()
+    cycleMove(3)
     return
   }
 
@@ -200,33 +173,18 @@ function onKeyDown(e) {
 
   if (key === ' ' || key === 'Enter') {
     e.preventDefault()
-    if (battle.phase === 'pick') attackWithSelected()
+    if (battle.phase === 'pick') startAbility()
     else if (battle.phase === 'timing') timingRef.value?.lock()
-    else if (battle.phase === 'resolve') onContinue()
-    else if (battle.phase === 'matchEnd') onRestart()
+    else if (battle.phase === 'playerShow' || battle.phase === 'rivalShow') onContinue()
+    else if (battle.phase === 'matchEnd') {
+      onRestart()
+      onStartFromMenu()
+    }
   }
 }
 
-function onKeyUp(e) {
-  const key = e.key
-  const lower = key.length === 1 ? key.toLowerCase() : key
-  if (key in keys) keys[key] = false
-  if (lower in keys) keys[lower] = false
-}
-
-onMounted(() => {
-  window.addEventListener('keydown', onKeyDown)
-  window.addEventListener('keyup', onKeyUp)
-  distTimer = window.setInterval(() => {
-    if (battle.phase === 'pick') syncDistance()
-  }, 100)
-})
-
-onBeforeUnmount(() => {
-  window.removeEventListener('keydown', onKeyDown)
-  window.removeEventListener('keyup', onKeyUp)
-  clearInterval(distTimer)
-})
+onMounted(() => window.addEventListener('keydown', onKeyDown))
+onBeforeUnmount(() => window.removeEventListener('keydown', onKeyDown))
 
 watch(
   () => battle.phase,
@@ -241,35 +199,29 @@ watch(
     <AuraScene
       ref="sceneRef"
       class="canvas-wrap"
-      :crowd="battle.crowd"
+      :crowd="55"
       :fx="fx"
-      :can-move="canMove"
-      :input="input"
+      :can-move="false"
+      :input="{ x: 0, z: 0 }"
     />
 
     <AuraFloats :event="floatEvent" />
-
     <MainMenu v-if="battle.phase === 'menu'" @start="onStartFromMenu" />
 
     <div v-if="battle.phase !== 'menu'" class="overlay">
       <BattleHud
         :phase="battle.phase"
-        :round="battle.round"
-        :player-wins="battle.playerWins"
-        :rival-wins="battle.rivalWins"
+        :turn="battle.turn"
         :player-aura="battle.playerAura"
         :rival-aura="battle.rivalAura"
-        :crowd="battle.crowd"
         :message="battle.message"
         :rival-name="battle.rival.name"
         :last-result="battle.lastResult"
         :move-index="moveIndex"
-        :distance="distance"
-        @pick="onPick"
         @select-move="onSelectMove"
-        @attack="attackWithSelected"
+        @attack="startAbility"
         @continue="onContinue"
-        @restart="onRestart"
+        @restart="() => { onRestart(); onStartFromMenu() }"
       />
 
       <div v-if="battle.phase === 'timing'" class="timing-wrap">
@@ -285,12 +237,10 @@ watch(
   width: 100%;
   height: 100%;
 }
-
 .canvas-wrap {
   position: absolute;
   inset: 0;
 }
-
 .overlay {
   position: absolute;
   inset: 0;
@@ -301,7 +251,6 @@ watch(
   pointer-events: none;
   z-index: 5;
 }
-
 .timing-wrap {
   pointer-events: auto;
   display: flex;

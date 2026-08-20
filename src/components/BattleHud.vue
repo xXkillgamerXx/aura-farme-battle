@@ -3,59 +3,46 @@ import { MOVES } from '../game/moves.js'
 
 defineProps({
   phase: String,
-  round: Number,
-  playerWins: Number,
-  rivalWins: Number,
+  turn: Number,
   playerAura: Number,
   rivalAura: Number,
-  crowd: Number,
   message: String,
   rivalName: String,
   lastResult: Object,
   moveIndex: { type: Number, default: 0 },
-  distance: { type: Number, default: 3 },
 })
 
-defineEmits(['pick', 'continue', 'restart', 'select-move', 'attack'])
+defineEmits(['select-move', 'attack', 'continue', 'restart'])
 </script>
 
 <template>
   <div class="hud">
     <header class="top">
       <div class="brand">
-        <p class="eyebrow">Plaza Battle</p>
+        <p class="eyebrow">Turno {{ turn }} · Estilo Pokémon</p>
         <h1>Aura Battle</h1>
       </div>
       <div class="score">
-        <span>Tú {{ playerWins }}</span>
-        <span class="sep">·</span>
-        <span>R{{ round }}</span>
-        <span class="sep">·</span>
-        <span>{{ rivalWins }} {{ rivalName }}</span>
+        <span v-if="phase === 'pick'">Tu turno</span>
+        <span v-else-if="phase === 'timing'">Timing</span>
+        <span v-else-if="phase === 'playerShow'">Tu ataque</span>
+        <span v-else-if="phase === 'rivalShow'">Rival</span>
+        <span v-else>Fin</span>
       </div>
     </header>
 
     <div class="meters">
       <div class="meter player">
         <div class="meta">
-          <strong>Tu Aura</strong>
-          <span>{{ Math.round(playerAura) }}</span>
+          <strong>Tú</strong>
+          <span>{{ Math.round(playerAura) }} HP</span>
         </div>
         <div class="bar"><i :style="{ width: playerAura + '%' }" /></div>
       </div>
-
-      <div class="meter crowd">
-        <div class="meta">
-          <strong>Crowd</strong>
-          <span>{{ Math.round(crowd) }}%</span>
-        </div>
-        <div class="bar"><i :style="{ width: crowd + '%' }" /></div>
-      </div>
-
       <div class="meter rival">
         <div class="meta">
           <strong>{{ rivalName }}</strong>
-          <span>{{ Math.round(rivalAura) }}</span>
+          <span>{{ Math.round(rivalAura) }} HP</span>
         </div>
         <div class="bar"><i :style="{ width: rivalAura + '%' }" /></div>
       </div>
@@ -63,16 +50,11 @@ defineEmits(['pick', 'continue', 'restart', 'select-move', 'attack'])
 
     <p class="message">{{ message }}</p>
 
-    <div v-if="phase === 'pick'" class="range" :class="{ hot: distance < 2.2 }">
-      Distancia {{ distance.toFixed(1) }}m
-      <span v-if="distance < 1.6">· MAX AURA</span>
-      <span v-else-if="distance > 3.2">· acércate</span>
-    </div>
-
-    <div v-if="lastResult && phase === 'resolve'" class="result">
-      <span :class="lastResult.verdict">{{ lastResult.verdict.toUpperCase() }}</span>
-      <span>{{ lastResult.move.name }} vs {{ lastResult.rivalMove.name }}</span>
-      <span>{{ lastResult.playerGain >= 0 ? '+' : '' }}{{ lastResult.playerGain }} aura</span>
+    <div v-if="lastResult && (phase === 'playerShow' || phase === 'rivalShow')" class="result">
+      <span :style="{ color: lastResult.tier?.color }">{{ lastResult.tier?.label }}</span>
+      <span>{{ lastResult.move?.name }}</span>
+      <span class="dmg">-{{ lastResult.damage }} daño</span>
+      <span v-if="lastResult.selfDamage">· autocastigo -{{ lastResult.selfDamage }}</span>
     </div>
 
     <div v-if="phase === 'pick'" class="moves">
@@ -89,39 +71,32 @@ defineEmits(['pick', 'continue', 'restart', 'select-move', 'attack'])
           <strong>{{ m.name }}</strong>
           <kbd>{{ i + 1 }}</kbd>
         </div>
-        <small>{{ m.tag }} · pwr {{ m.power }}</small>
+        <small>poder {{ m.power }}</small>
         <em>{{ m.desc }}</em>
       </button>
     </div>
 
     <div v-if="phase === 'pick'" class="attack-row">
       <button type="button" class="attack-btn" @click="$emit('attack')">
-        ATACAR <kbd>SPACE</kbd>
+        USAR HABILIDAD <kbd>SPACE</kbd>
       </button>
     </div>
 
-    <div v-if="phase === 'pick'" class="controls">
-      <span><kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd> mover</span>
-      <span><kbd>Q</kbd><kbd>E</kbd> elegir</span>
-      <span><kbd>SPACE</kbd> atacar</span>
+    <div v-if="phase === 'pick'" class="hint">
+      Mejor timing = más daño · Peor timing = menos daño / cringe
     </div>
 
-    <div v-if="phase === 'resolve' || phase === 'matchEnd'" class="actions">
+    <div v-if="phase === 'playerShow' || phase === 'rivalShow' || phase === 'matchEnd'" class="actions">
       <button
-        v-if="phase === 'resolve'"
+        v-if="phase === 'playerShow' || phase === 'rivalShow'"
         type="button"
         class="primary"
         @click="$emit('continue')"
       >
-        Siguiente <kbd>SPACE</kbd>
+        Continuar <kbd>SPACE</kbd>
       </button>
-      <button
-        v-if="phase === 'matchEnd'"
-        type="button"
-        class="primary"
-        @click="$emit('restart')"
-      >
-        Menú / Revancha <kbd>SPACE</kbd>
+      <button v-if="phase === 'matchEnd'" type="button" class="primary" @click="$emit('restart')">
+        Otra batalla <kbd>SPACE</kbd>
       </button>
     </div>
   </div>
@@ -133,8 +108,7 @@ defineEmits(['pick', 'continue', 'restart', 'select-move', 'attack'])
   gap: 0.7rem;
   pointer-events: none;
 }
-
-.hud :is(button, .moves, .actions) {
+.hud :is(button, .moves, .actions, .attack-row) {
   pointer-events: auto;
 }
 
@@ -150,7 +124,7 @@ defineEmits(['pick', 'continue', 'restart', 'select-move', 'attack'])
   color: var(--accent);
   font-size: 0.75rem;
   text-transform: uppercase;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.12em;
 }
 
 .brand h1 {
@@ -165,25 +139,16 @@ defineEmits(['pick', 'continue', 'restart', 'select-move', 'attack'])
   border: 1px solid var(--line);
   font-size: 0.85rem;
   color: var(--muted);
-  max-width: 55%;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.sep {
-  opacity: 0.4;
-  margin: 0 0.25rem;
 }
 
 .meters {
   display: grid;
-  grid-template-columns: 1fr 0.9fr 1fr;
+  grid-template-columns: 1fr 1fr;
   gap: 0.55rem;
 }
 
 .meter {
-  padding: 0.6rem 0.7rem;
+  padding: 0.65rem 0.75rem;
   border-radius: 14px;
   background: var(--panel);
   border: 1px solid var(--line);
@@ -193,29 +158,24 @@ defineEmits(['pick', 'continue', 'restart', 'select-move', 'attack'])
 .meta {
   display: flex;
   justify-content: space-between;
-  font-size: 0.78rem;
-  margin-bottom: 0.3rem;
+  font-size: 0.8rem;
+  margin-bottom: 0.35rem;
   gap: 0.4rem;
 }
 
 .bar {
-  height: 8px;
+  height: 10px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.08);
   overflow: hidden;
 }
-
 .bar i {
   display: block;
   height: 100%;
   border-radius: inherit;
 }
-
 .player .bar i {
   background: linear-gradient(90deg, #4cc9f0, #80ed99);
-}
-.crowd .bar i {
-  background: linear-gradient(90deg, #ffd166, #ff9f1c);
 }
 .rival .bar i {
   background: linear-gradient(90deg, #f72585, #c77dff);
@@ -224,48 +184,21 @@ defineEmits(['pick', 'continue', 'restart', 'select-move', 'attack'])
 .message {
   margin: 0;
   text-align: center;
-  font-size: 1.02rem;
+  font-size: 1.05rem;
   color: #e8eeff;
   text-shadow: 0 2px 16px rgba(0, 0, 0, 0.45);
-}
-
-.range {
-  justify-self: center;
-  padding: 0.35rem 0.75rem;
-  border-radius: 999px;
-  background: rgba(12, 18, 34, 0.75);
-  border: 1px solid var(--line);
-  color: var(--muted);
-  font-size: 0.8rem;
-}
-
-.range.hot {
-  color: #041018;
-  background: linear-gradient(135deg, #ffd166, #80ed99);
-  border-color: transparent;
-  font-weight: 700;
 }
 
 .result {
   display: flex;
   justify-content: center;
-  gap: 0.75rem;
+  gap: 0.65rem;
   flex-wrap: wrap;
-  font-size: 0.85rem;
+  font-size: 0.9rem;
   color: var(--muted);
 }
-
-.result .win {
-  color: var(--good);
-  font-weight: 700;
-}
-.result .lose,
-.result .cringe {
-  color: var(--bad);
-  font-weight: 700;
-}
-.result .tie {
-  color: var(--accent);
+.dmg {
+  color: #ff6b6b;
   font-weight: 700;
 }
 
@@ -283,70 +216,61 @@ defineEmits(['pick', 'continue', 'restart', 'select-move', 'attack'])
   border: 1px solid color-mix(in srgb, var(--c) 40%, transparent);
   color: var(--ink);
   display: grid;
-  gap: 0.18rem;
-  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  gap: 0.15rem;
 }
-
 .move.on {
-  transform: translateY(-2px);
   border-color: var(--c);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--c) 55%, transparent),
-    0 10px 24px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--c) 55%, transparent);
+  transform: translateY(-2px);
 }
-
 .move-top {
   display: flex;
   justify-content: space-between;
-  align-items: center;
   gap: 0.4rem;
 }
-
 .move small {
   color: var(--muted);
+  font-size: 0.68rem;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
-  font-size: 0.66rem;
 }
-
 .move em {
   font-style: normal;
   color: #c5d0ea;
   font-size: 0.76rem;
-  line-height: 1.25;
-}
-
-.controls {
-  display: flex;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 0.75rem 1.1rem;
-  color: var(--muted);
-  font-size: 0.78rem;
 }
 
 .attack-row {
   display: flex;
   justify-content: center;
 }
-
 .attack-btn {
   border-radius: 14px;
-  padding: 0.9rem 1.5rem;
+  padding: 0.9rem 1.4rem;
   background: linear-gradient(135deg, #f72585, #ff9f1c);
   color: #fff;
   font-weight: 800;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
   display: inline-flex;
   align-items: center;
-  gap: 0.55rem;
-  box-shadow: 0 10px 28px rgba(247, 37, 133, 0.35);
+  gap: 0.5rem;
+}
+.hint {
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.78rem;
 }
 
-.attack-btn kbd {
-  background: rgba(0, 0, 0, 0.2);
-  border-color: rgba(255, 255, 255, 0.2);
+.actions {
+  display: flex;
+  justify-content: center;
 }
-
+.primary {
+  border-radius: 14px;
+  padding: 0.85rem 1.25rem;
+  background: linear-gradient(135deg, #4cc9f0, #80ed99);
+  color: #041018;
+  font-weight: 700;
+}
 
 kbd {
   display: inline-block;
@@ -361,32 +285,14 @@ kbd {
   text-align: center;
 }
 
-.actions {
-  display: flex;
-  justify-content: center;
-}
-
-.primary {
-  border-radius: 14px;
-  padding: 0.85rem 1.25rem;
-  background: linear-gradient(135deg, #4cc9f0, #80ed99);
-  color: #041018;
-  font-weight: 700;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
+.attack-btn kbd,
 .primary kbd {
   background: rgba(0, 0, 0, 0.15);
-  border-color: rgba(0, 0, 0, 0.12);
-  color: #041018;
+  border-color: rgba(0, 0, 0, 0.1);
+  color: inherit;
 }
 
 @media (max-width: 800px) {
-  .meters {
-    grid-template-columns: 1fr;
-  }
   .moves {
     grid-template-columns: 1fr 1fr;
   }
