@@ -64,7 +64,7 @@ const rivalPct = computed(() => (props.rivalAura / props.rivalMax) * 100)
         <span :style="{ color: lastResult.tier?.color }">{{ lastResult.tier?.label }}</span>
         <span>{{ lastResult.move?.name }}</span>
         <span v-if="lastResult.hits > 1" class="x2">x2 baile</span>
-        <span class="dmg">-{{ lastResult.damage }} vergüenza</span>
+        <span class="dmg">-{{ lastResult.damage }} menos aura</span>
       </div>
     </div>
 

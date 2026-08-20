@@ -90,7 +90,7 @@ export function resolvePlayerAttack(state, accuracy, run) {
       ? WIN_LINE
       : lost
         ? LOSE_LINE
-        : `${move.name} → -${shame} vergüenza (${tier.label})`,
+        : `${move.name} → -${shame} menos aura (${tier.label})`,
     log: [...state.log, { turn: state.turn, side: 'player', move: move.name, damage: shame, tier: tier.id }],
   }
 }
@@ -135,7 +135,7 @@ export function resolveRivalAttack(state) {
     },
     message: lost
       ? LOSE_LINE
-      : `${state.rival.name} bailó ${move.name} → -${shame} vergüenza`,
+      : `${state.rival.name} bailó ${move.name} → -${shame} menos aura`,
     log: [...state.log, { turn: state.turn, side: 'rival', move: move.name, damage: shame, tier: tier.id }],
   }
 }

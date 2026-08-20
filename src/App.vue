@@ -120,7 +120,7 @@ function onTiming(accuracy) {
     spawnFloat({
       who: 'rival',
       kind: 'down',
-      text: `-${result.damage} VERGÜENZA`,
+      text: `-${result.damage} MENOS AURA`,
       x: r.x,
       y: r.y,
     })
@@ -165,7 +165,7 @@ function playRivalTurn() {
     spawnFloat({
       who: 'player',
       kind: 'down',
-      text: `-${result.damage} VERGÜENZA`,
+      text: `-${result.damage} MENOS AURA`,
       x: p.x,
       y: p.y,
     })
