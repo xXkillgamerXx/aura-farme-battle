@@ -14,6 +14,11 @@ function confirm() {
   if (c) emit('pick', c.id)
 }
 
+function onChoiceClick(i) {
+  if (selected.value === i) confirm()
+  else selected.value = i
+}
+
 function onKey(e) {
   if (e.repeat) return
   if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
@@ -36,7 +41,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   <div class="up">
     <div class="card">
       <h1 class="display">{{ title }}</h1>
-      <p class="sub">Elige mejora · ← → · SPACE</p>
+      <p class="sub">Clic elige · doble clic / SPACE confirma</p>
       <div class="choices">
         <button
           v-for="(c, i) in choices"
@@ -45,7 +50,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           class="choice"
           :class="{ on: selected === i }"
           @mouseenter="selected = i"
-          @click="selected = i; confirm()"
+          @click="onChoiceClick(i)"
         >
           <strong>{{ c.name }}</strong>
           <span>{{ c.desc }}</span>

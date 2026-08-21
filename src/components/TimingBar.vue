@@ -5,6 +5,7 @@ import { timingTier } from '../game/battle.js'
 const props = defineProps({
   active: Boolean,
   move: { type: Object, default: null },
+  combo: { type: Object, default: null },
 })
 
 const emit = defineEmits(['hit'])
@@ -16,9 +17,22 @@ let raf = 0
 let last = 0
 
 const zoneCenter = computed(() => props.move?.bar?.zone ?? 0.5)
-const zoneWidth = computed(() => props.move?.bar?.width ?? 0.14)
-const speed = computed(() => props.move?.bar?.speed ?? 1.05)
+const zoneWidth = computed(() => {
+  const base = props.move?.bar?.width ?? 0.14
+  // Combos siguientes: zona un poco más exigente
+  if (props.combo?.step >= 2) return base * 0.85
+  return base
+})
+const speed = computed(() => {
+  const base = props.move?.bar?.speed ?? 1.05
+  if (props.combo?.step >= 2) return base * (1 + props.combo.step * 0.12)
+  return base
+})
 const accent = computed(() => props.move?.color ?? '#ffd166')
+const comboLabel = computed(() => {
+  if (!props.combo) return null
+  return `COMBO ${props.combo.step}/${props.combo.max}`
+})
 
 const zoneStart = computed(() => Math.max(0.05, zoneCenter.value - zoneWidth.value / 2))
 const zoneEnd = computed(() => Math.min(0.95, zoneCenter.value + zoneWidth.value / 2))
@@ -94,7 +108,12 @@ defineExpose({ start, stop, lock })
 <template>
   <div class="timing" :style="{ '--accent': accent }">
     <div class="label">
-      Ritmo de <strong>{{ move?.name || 'baile' }}</strong>
+      <template v-if="comboLabel">
+        <strong class="combo">{{ comboLabel }}</strong> — sigue el ritmo
+      </template>
+      <template v-else>
+        Ritmo de <strong>{{ move?.name || 'baile' }}</strong>
+      </template>
       <span class="spc"> — SPACE</span>
     </div>
     <div class="tiers">
@@ -143,6 +162,10 @@ defineExpose({ start, stop, lock })
 }
 .label strong {
   color: var(--accent);
+}
+.label .combo {
+  color: #ffd166;
+  letter-spacing: 0.06em;
 }
 
 .tiers {

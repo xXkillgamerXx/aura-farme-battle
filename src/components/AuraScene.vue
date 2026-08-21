@@ -10,12 +10,18 @@ const props = defineProps({
 })
 
 const canvasRef = ref(null)
+const loadError = ref('')
 let api = null
 
-onMounted(() => {
-  api = createBattleScene(canvasRef.value)
-  api.setCrowd(props.crowd / 100)
-  api.setCanMove(props.canMove)
+onMounted(async () => {
+  try {
+    api = await createBattleScene(canvasRef.value)
+    api.setCrowd(props.crowd / 100)
+    api.setCanMove(props.canMove)
+  } catch (err) {
+    console.error('[aura] scene failed', err)
+    loadError.value = err?.message || 'Error cargando modelos 3D'
+  }
 })
 
 onBeforeUnmount(() => {
@@ -50,6 +56,7 @@ watch(
     }
     if (fx.type === 'move') {
       api.setAttacking(true)
+      api.setAttacker?.(fx.who)
       api.triggerMove(
         fx.who,
         fx.moveId,
@@ -58,8 +65,14 @@ watch(
         fx.camera || 'side',
       )
     }
+    if (fx.type === 'attacker') {
+      api.setAttacker?.(fx.who || null)
+    }
     if (fx.type === 'camera') {
       api.setCameraMode?.(fx.mode || 'idle')
+    }
+    if (fx.type === 'crowd') {
+      api.reactCrowd?.(fx.kind || 'cheer')
     }
     if (fx.type === 'shame') {
       api.showAuraBurst(fx.who, -10)
@@ -89,13 +102,34 @@ defineExpose({
 </script>
 
 <template>
-  <canvas ref="canvasRef" class="scene" />
+  <div class="wrap">
+    <canvas ref="canvasRef" class="scene" />
+    <p v-if="loadError" class="err">{{ loadError }}</p>
+  </div>
 </template>
 
 <style scoped>
+.wrap {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
 .scene {
   width: 100%;
   height: 100%;
   display: block;
+}
+.err {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  color: #ff8a8a;
+  background: rgba(0, 0, 0, 0.7);
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  z-index: 2;
+  max-width: 90%;
+  text-align: center;
 }
 </style>

@@ -16,29 +16,65 @@ export function timingTier(accuracy) {
  * Tu baile:
  * - bien → +tu AURA (+ cringe al rival)
  * - mal → +tu CRINGE
+ * effect del move modifica el resultado
  */
-function playerMeterDelta(tierId, power, run) {
+function playerMeterDelta(tierId, power, run, move) {
   const p = power / 24
+  const effect = move?.effect || 'aura'
+  let auraGain = 0
+  let cringeGain = 0
+  let rivalCringe = 0
+  let rivalAuraDrain = 0
+
   switch (tierId) {
     case 'perfect': {
-      let aura = Math.round(24 * p)
-      if (run.iconicBonus) aura = Math.round(aura * (1 + run.iconicBonus))
-      return { auraGain: aura, cringeGain: 0, rivalCringe: Math.round(10 * p), rivalAuraDrain: 0 }
+      auraGain = Math.round(24 * p)
+      if (run.iconicBonus) auraGain = Math.round(auraGain * (1 + run.iconicBonus))
+      rivalCringe = Math.round(10 * p)
+      break
     }
     case 'great':
-      return { auraGain: Math.round(17 * p), cringeGain: 0, rivalCringe: Math.round(6 * p), rivalAuraDrain: 0 }
+      auraGain = Math.round(17 * p)
+      rivalCringe = Math.round(6 * p)
+      break
     case 'ok':
-      return { auraGain: Math.round(10 * p), cringeGain: Math.round(5 * p), rivalCringe: 2, rivalAuraDrain: 0 }
+      auraGain = Math.round(10 * p)
+      cringeGain = Math.round(5 * p)
+      rivalCringe = 2
+      break
     case 'weak':
-      return { auraGain: Math.round(3 * p), cringeGain: Math.round(14 * p), rivalCringe: 0, rivalAuraDrain: 0 }
+      auraGain = Math.round(3 * p)
+      cringeGain = Math.round(14 * p)
+      break
     default:
-      return {
-        auraGain: 0,
-        cringeGain: run.noSelfCringe ? Math.round(8 * p) : Math.round(22 * p),
-        rivalCringe: 0,
-        rivalAuraDrain: 0,
-      }
+      auraGain = 0
+      cringeGain = run.noSelfCringe ? Math.round(8 * p) : Math.round(22 * p)
   }
+
+  // Efectos por habilidad
+  if (effect === 'safe' && cringeGain > 0) {
+    cringeGain = Math.max(1, Math.round(cringeGain * 0.35))
+  }
+  if (effect === 'shame' && rivalCringe > 0) {
+    rivalCringe = Math.round(rivalCringe * 1.75)
+  }
+  if (effect === 'shame' && tierId === 'perfect') {
+    rivalCringe += Math.round(8 * p)
+  }
+  if (effect === 'drain' && auraGain > 0) {
+    const drainMult = 0.45 + (run.drainBonus || 0)
+    rivalAuraDrain = Math.round(auraGain * drainMult)
+  }
+  if (effect === 'gamble') {
+    if (tierId === 'perfect' || tierId === 'great') {
+      auraGain = Math.round(auraGain * 1.45)
+      rivalCringe = Math.round(rivalCringe * 1.2)
+    } else if (tierId === 'miss' || tierId === 'weak') {
+      cringeGain = Math.round(cringeGain * 1.6)
+    }
+  }
+
+  return { auraGain, cringeGain, rivalCringe, rivalAuraDrain }
 }
 
 /**
@@ -77,6 +113,7 @@ export function createBattle(rival, run) {
     moveIndex: 0,
     lastResult: null,
     outcome: null,
+    combo: null,
     message: `${rival.name}: llena tu AURA a 100. CRINGE a 100 = pierdes.`,
     rival,
     log: [],
@@ -90,7 +127,7 @@ export function pickMove(state, moveId) {
     ...state,
     phase: 'timing',
     selectedMove: move,
-    message: `Baila ${move.name} — bien = +AURA · mal = +CRINGE`,
+    message: `Baila ${move.name} [${move.effect || 'aura'}] — ${move.desc}`,
   }
 }
 
@@ -112,58 +149,146 @@ function checkEnd(state) {
 }
 
 export function resolvePlayerAttack(state, accuracy, run) {
-  if (state.phase !== 'timing' || !state.selectedMove) return state
+  if (state.phase !== 'timing' && state.phase !== 'combo') return state
+  if (!state.selectedMove) return state
 
   const move = state.selectedMove
   const tier = timingTier(accuracy)
-  const power = getMovePower(run, move)
-  let delta = playerMeterDelta(tier.id, power, run)
+  const effect = move.effect || 'aura'
 
-  let hits = 1
-  if (tier.id === 'perfect' && Math.random() < 0.4) {
-    hits = 2
-    delta = {
-      ...delta,
-      auraGain: Math.round(delta.auraGain * 1.35),
-      rivalCringe: Math.round(delta.rivalCringe * 1.2),
+  // Combo: ICÓNICO/ÉPICO siempre · move "combo" también con OK
+  const opensCombo =
+    tier.id === 'perfect' ||
+    tier.id === 'great' ||
+    (effect === 'combo' && tier.id === 'ok')
+
+  if (state.phase === 'timing' && opensCombo) {
+    const max = tier.id === 'perfect' ? 3 : tier.id === 'great' ? 2 : 2
+    return {
+      ...state,
+      phase: 'combo',
+      combo: {
+        step: 1,
+        max,
+        accuracies: [accuracy],
+        tiers: [tier.id],
+      },
+      message: `COMBO 1/${max} — ¡sigue el ritmo!`,
+      outcome: null,
     }
   }
 
-  const playerAura = clamp(state.playerAura + delta.auraGain, 0, state.auraMax)
-  const playerCringe = clamp(state.playerCringe + delta.cringeGain, 0, state.cringeMax)
-  const rivalCringe = clamp(state.rivalCringe + delta.rivalCringe, 0, state.cringeMax)
+  // En combo: acumular o romper
+  if (state.phase === 'combo' && state.combo) {
+    const accuracies = [...state.combo.accuracies, accuracy]
+    const tiers = [...state.combo.tiers, tier.id]
+    const step = state.combo.step + 1
+    const broke = tier.id === 'miss' || tier.id === 'weak'
+    if (!broke && step < state.combo.max) {
+      return {
+        ...state,
+        phase: 'combo',
+        combo: { ...state.combo, step, accuracies, tiers },
+        message: `COMBO ${step}/${state.combo.max} — ¡sigue!`,
+      }
+    }
+    return finalizePlayerHits(
+      { ...state, combo: { ...state.combo, step, accuracies, tiers } },
+      run,
+      broke,
+    )
+  }
+
+  // Sin combo (OK / débil / cringe de una)
+  return finalizePlayerHits(
+    {
+      ...state,
+      combo: { step: 1, max: 1, accuracies: [accuracy], tiers: [tier.id] },
+    },
+    run,
+    false,
+  )
+}
+
+function finalizePlayerHits(state, run, broke) {
+  const move = state.selectedMove
+  const power = getMovePower(run, move)
+  const accuracies = state.combo?.accuracies || [0]
+  const hits = accuracies.length
+
+  let auraGain = 0
+  let cringeGain = 0
+  let rivalCringe = 0
+  let rivalAuraDrain = 0
+  let bestTier = timingTier(accuracies[0] ?? 0)
+
+  accuracies.forEach((acc, i) => {
+    const t = timingTier(acc)
+    if (t.mult >= bestTier.mult) bestTier = t
+    const d = playerMeterDelta(t.id, power, run, move)
+    const scale = 1 + (i > 0 ? 0.35 * i : 0)
+    auraGain += Math.round(d.auraGain * scale)
+    cringeGain += d.cringeGain
+    rivalCringe += Math.round(d.rivalCringe * (i === 0 ? 1 : 0.7))
+    rivalAuraDrain += Math.round(d.rivalAuraDrain * (i === 0 ? 1 : 0.6))
+  })
+
+  // Bonus de combo completo
+  if (!broke && hits >= 2) {
+    let comboMult = hits >= 3 ? 1.4 : 1.22
+    if (run.comboBonus) comboMult += run.comboBonus
+    auraGain = Math.round(auraGain * comboMult)
+    rivalCringe = Math.round(rivalCringe * 1.15)
+    rivalAuraDrain = Math.round(rivalAuraDrain * 1.1)
+  }
+
+  const playerAura = clamp(state.playerAura + auraGain, 0, state.auraMax)
+  const playerCringe = clamp(state.playerCringe + cringeGain, 0, state.cringeMax)
+  const rivalCringeNext = clamp(state.rivalCringe + rivalCringe, 0, state.cringeMax)
+  const rivalAura = clamp((state.rivalAura || 0) - rivalAuraDrain, 0, state.auraMax)
+
+  let msg
+  if (hits >= 3) msg = `COMBO x${hits}: +${auraGain} AURA`
+  else if (hits === 2 && !broke) msg = `COMBO x2: +${auraGain} AURA`
+  else if (auraGain > 0) msg = `${move.name}: +${auraGain} AURA (${bestTier.label})`
+  else msg = `${move.name}: +${cringeGain} CRINGE (${bestTier.label})`
+  if (rivalAuraDrain > 0) msg += ` · −${rivalAuraDrain} aura rival`
+  if (broke && hits > 1) msg = `Combo roto · ${msg}`
 
   let next = {
     ...state,
     playerAura,
     playerCringe,
-    rivalCringe,
-    timingScore: accuracy,
+    rivalCringe: rivalCringeNext,
+    rivalAura,
+    combo: null,
+    timingScore: accuracies.reduce((a, b) => a + b, 0) / hits,
     lastResult: {
       side: 'player',
       move,
-      accuracy,
-      tier,
-      auraGain: delta.auraGain,
-      cringeGain: delta.cringeGain,
-      rivalCringeGain: delta.rivalCringe,
+      accuracy: accuracies[accuracies.length - 1],
+      tier: bestTier,
+      auraGain,
+      cringeGain,
+      rivalCringeGain: rivalCringe,
       auraLoss: 0,
+      rivalAuraDrain,
       hits,
-      crowd: tier.crowd,
+      crowd: bestTier.crowd,
+      comboBroke: broke,
     },
-    message:
-      delta.auraGain > 0
-        ? `${move.name}: +${delta.auraGain} AURA (${tier.label})`
-        : `${move.name}: +${delta.cringeGain} CRINGE (${tier.label})`,
+    message: msg,
     log: [
       ...state.log,
       {
         turn: state.turn,
         side: 'player',
         move: move.name,
-        auraGain: delta.auraGain,
-        cringeGain: delta.cringeGain,
-        tier: tier.id,
+        auraGain,
+        cringeGain,
+        rivalAuraDrain,
+        tier: bestTier.id,
+        hits,
       },
     ],
   }
@@ -178,7 +303,14 @@ export function resolveRivalAttack(state) {
   const early = checkEnd(state)
   if (early) return early
 
-  const move = MOVES[Math.floor(Math.random() * MOVES.length)]
+  const prefers = state.rival.prefers || []
+  let move
+  if (prefers.length && Math.random() < 0.65) {
+    const id = prefers[Math.floor(Math.random() * prefers.length)]
+    move = MOVES.find((m) => m.id === id) || MOVES[Math.floor(Math.random() * MOVES.length)]
+  } else {
+    move = MOVES[Math.floor(Math.random() * MOVES.length)]
+  }
   const roll = 0.35 + state.rival.difficulty * 0.5 + Math.random() * 0.2
   const accuracy = clamp(roll, 0.15, 0.98)
   const tier = timingTier(accuracy)
@@ -254,6 +386,7 @@ export function nextPlayerTurn(state) {
     turn: state.turn + 1,
     selectedMove: null,
     lastResult: null,
+    combo: null,
     message: `Turno ${state.turn + 1}. Llena AURA a 100 · CRINGE lleno = pierdes`,
   }
 }

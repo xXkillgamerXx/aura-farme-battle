@@ -15,6 +15,8 @@ export function createRun() {
     moveBonus,
     iconicBonus: 0,
     noSelfCringe: false,
+    drainBonus: 0,
+    comboBonus: 0,
     healAfter: false,
     upgradesTaken: [],
     wonRun: false,

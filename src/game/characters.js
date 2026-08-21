@@ -1,69 +1,167 @@
 import * as THREE from 'three'
+import { FBXLoader } from 'three/addons/loaders/FBXLoader.js'
+import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js'
+
+const BASE = import.meta.env.BASE_URL || './'
+
+const ANIM_URLS = {
+  idle: `${BASE}models/idle.fbx`,
+  step: `${BASE}models/step-hiphop.fbx`,
+  wave: `${BASE}models/wave-hiphop.fbx`,
+  chicken: `${BASE}models/chicken-dance.fbx`,
+  clapping: `${BASE}models/clapping.fbx`,
+  cheering: `${BASE}models/cheering.fbx`,
+  rallying: `${BASE}models/rallying.fbx`,
+  arguing: `${BASE}models/arguing.fbx`,
+}
+
+/** Pose del juego → clip Mixamo + velocidad */
+const POSE_TO_ANIM = {
+  idle: { clip: 'idle', timeScale: 1 },
+  'aura-walk': { clip: 'step', timeScale: 1.05 },
+  mewing: { clip: 'wave', timeScale: 0.5 },
+  'six-seven': { clip: 'wave', timeScale: 1.3 },
+  'sigma-stare': { clip: 'wave', timeScale: 0.35 },
+  'boat-kid': { clip: 'chicken', timeScale: 1.15 },
+  'no-look': { clip: 'wave', timeScale: 0.95 },
+  cringe: { clip: 'chicken', timeScale: 1.7 },
+}
+
+const FIGHTER_CLIP_KEYS = ['idle', 'step', 'wave', 'chicken']
+const CROWD_CLIP_KEYS = ['idle', 'clapping', 'cheering', 'rallying', 'arguing']
+
+let shared = null
+let sharedPromise = null
+
+function pickClip(fbx) {
+  const list = fbx?.animations || []
+  const good = list.find((a) => a.tracks && a.tracks.length > 0)
+  return good ? good.clone() : null
+}
+
+async function loadShared() {
+  if (shared) return shared
+  if (sharedPromise) return sharedPromise
+
+  sharedPromise = (async () => {
+    const loader = new FBXLoader()
+    const entries = Object.entries(ANIM_URLS)
+    const loaded = await Promise.all(
+      entries.map(([, url]) =>
+        loader.loadAsync(url).catch((err) => {
+          console.error('[aura] FBX fail', url, err)
+          return null
+        }),
+      ),
+    )
+
+    const byKey = {}
+    entries.forEach(([key], i) => {
+      byKey[key] = loaded[i]
+    })
+
+    const base = byKey.idle
+    if (!base) throw new Error('No se pudo cargar idle.fbx')
+
+    const clips = {}
+    for (const key of Object.keys(ANIM_URLS)) {
+      const src = byKey[key]
+      if (!src) {
+        clips[key] = null
+        continue
+      }
+      const clip = pickClip(src)
+      if (clip) clip.name = key
+      clips[key] = clip
+    }
+
+    console.info(
+      '[aura] clips',
+      Object.fromEntries(Object.entries(clips).map(([k, c]) => [k, c ? c.duration : null])),
+    )
+
+    shared = { base, clips }
+    return shared
+  })()
+
+  try {
+    return await sharedPromise
+  } catch (err) {
+    sharedPromise = null
+    throw err
+  }
+}
+
+function tintModel(model, color) {
+  const tint = new THREE.Color(color)
+  model.traverse((child) => {
+    if (!child.isMesh) return
+    // Ocultar esqueleto visual de Mixamo (Beta_Joints)
+    if (/joint/i.test(child.name)) {
+      child.visible = false
+      return
+    }
+    child.castShadow = true
+    child.receiveShadow = true
+    child.frustumCulled = false
+    const src = Array.isArray(child.material) ? child.material : [child.material]
+    const cloned = src.map((m) => {
+      const mat = new THREE.MeshStandardMaterial({
+        color: m.color ? m.color.clone().lerp(tint, 0.5) : tint.clone(),
+        map: m.map || null,
+        roughness: 0.55,
+        metalness: 0.08,
+      })
+      return mat
+    })
+    child.material = cloned.length === 1 ? cloned[0] : cloned
+  })
+}
+
+function fitModel(model, targetHeight = 2.05) {
+  model.updateMatrixWorld(true)
+  const box = new THREE.Box3().setFromObject(model)
+  const size = box.getSize(new THREE.Vector3())
+  if (size.y < 0.001) {
+    // Mixamo suele venir en cm (~180); fallback
+    model.scale.setScalar(0.012)
+    return
+  }
+  const s = targetHeight / size.y
+  model.scale.setScalar(s)
+  model.updateMatrixWorld(true)
+  const fitted = new THREE.Box3().setFromObject(model)
+  model.position.y = -fitted.min.y
+}
 
 /**
- * Personaje low-poly estilizado para batallas de aura.
+ * Fighter 3D (Mixamo) con animaciones de baile.
  */
-export function createFighter({ color = 0x4cc9f0, name = 'player' } = {}) {
+export async function createFighter({ color = 0x4cc9f0, name = 'player' } = {}) {
+  const { base, clips } = await loadShared()
+
   const root = new THREE.Group()
   root.name = name
 
-  const mat = new THREE.MeshStandardMaterial({
-    color,
-    roughness: 0.45,
-    metalness: 0.15,
+  const model = cloneSkeleton(base)
+  model.animations = []
+  tintModel(model, color)
+  fitModel(model)
+  root.add(model)
+
+  // Hips de Mixamo (para anular root motion horizontal)
+  let hips = null
+  model.traverse((c) => {
+    if (hips) return
+    const n = c.name || ''
+    if (n === 'mixamorigHips' || n === 'Hips' || n.endsWith('Hips')) hips = c
   })
-  const dark = new THREE.MeshStandardMaterial({
-    color: 0x1a1f2e,
-    roughness: 0.7,
-  })
-  const skin = new THREE.MeshStandardMaterial({
-    color: 0xe8c4a8,
-    roughness: 0.55,
-  })
-
-  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.9, 0.4), mat)
-  torso.position.y = 1.15
-  torso.castShadow = true
-  root.add(torso)
-
-  const hips = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.35, 0.38), dark)
-  hips.position.y = 0.6
-  root.add(hips)
-
-  const head = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.45, 0.45), skin)
-  head.position.y = 1.85
-  head.castShadow = true
-  root.add(head)
-
-  const shades = new THREE.Mesh(
-    new THREE.BoxGeometry(0.48, 0.12, 0.12),
-    new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.8, roughness: 0.2 }),
-  )
-  shades.position.set(0, 1.88, 0.22)
-  root.add(shades)
-
-  const leftArm = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.7, 0.18), mat)
-  leftArm.position.set(-0.5, 1.15, 0)
-  leftArm.name = 'leftArm'
-  root.add(leftArm)
-
-  const rightArm = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.7, 0.18), mat)
-  rightArm.position.set(0.5, 1.15, 0)
-  rightArm.name = 'rightArm'
-  root.add(rightArm)
-
-  const leftLeg = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.7, 0.22), dark)
-  leftLeg.position.set(-0.2, 0.2, 0)
-  leftLeg.name = 'leftLeg'
-  root.add(leftLeg)
-
-  const rightLeg = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.7, 0.22), dark)
-  rightLeg.position.set(0.2, 0.2, 0)
-  rightLeg.name = 'rightLeg'
-  root.add(rightLeg)
+  const hipsHome = hips
+    ? { x: hips.position.x, y: hips.position.y, z: hips.position.z }
+    : null
 
   const aura = new THREE.Mesh(
-    new THREE.SphereGeometry(1.1, 24, 16),
+    new THREE.SphereGeometry(1.15, 24, 16),
     new THREE.MeshBasicMaterial({
       color,
       transparent: true,
@@ -76,7 +174,7 @@ export function createFighter({ color = 0x4cc9f0, name = 'player' } = {}) {
   root.add(aura)
 
   const ring = new THREE.Mesh(
-    new THREE.RingGeometry(0.55, 0.7, 32),
+    new THREE.RingGeometry(0.55, 0.72, 32),
     new THREE.MeshBasicMaterial({
       color,
       transparent: true,
@@ -89,21 +187,34 @@ export function createFighter({ color = 0x4cc9f0, name = 'player' } = {}) {
   ring.name = 'ring'
   root.add(ring)
 
+  const mixer = new THREE.AnimationMixer(model)
+  const actions = {}
+  for (const key of FIGHTER_CLIP_KEYS) {
+    const clip = clips[key]
+    if (!clip) continue
+    const action = mixer.clipAction(clip)
+    action.enabled = true
+    action.setLoop(THREE.LoopRepeat, Infinity)
+    actions[key] = action
+  }
+
   root.userData = {
-    leftArm,
-    rightArm,
-    leftLeg,
-    rightLeg,
-    head,
-    torso,
+    model,
+    mixer,
+    actions,
+    currentAction: null,
+    hips,
+    hipsHome,
     aura,
     ring,
     baseColor: color,
     pose: 'idle',
     poseT: 0,
-    facing: name === 'player' ? 0.25 : -0.25,
+    intensity: 1,
+    facing: name === 'player' ? Math.PI / 2 : -Math.PI / 2,
   }
 
+  playPose(root, 'idle', 1)
   return root
 }
 
@@ -112,91 +223,203 @@ export function playPose(fighter, poseId, intensity = 1) {
   u.pose = poseId
   u.poseT = 0
   u.intensity = intensity
+
+  const map = POSE_TO_ANIM[poseId] || POSE_TO_ANIM.idle
+  const next = u.actions?.[map.clip]
+  if (!next) {
+    console.warn('[aura] sin clip para pose', poseId, map.clip)
+    return
+  }
+
+  const speed = map.timeScale * (0.75 + intensity * 0.45)
+  next.setEffectiveTimeScale(speed)
+
+  if (u.currentAction === next) {
+    next.setEffectiveWeight(1)
+    return
+  }
+
+  if (u.currentAction) {
+    u.currentAction.fadeOut(0.2)
+  }
+  next.reset()
+  next.setEffectiveWeight(1)
+  next.fadeIn(0.2)
+  next.play()
+  u.currentAction = next
 }
 
 export function updateFighter(fighter, dt, time) {
   const u = fighter.userData
   u.poseT += dt
-  const t = u.poseT
-  const breath = Math.sin(time * 2) * 0.02
-  u.torso.position.y = 1.15 + breath
+  u.mixer?.update(dt)
 
-  // reset soft
-  u.leftArm.rotation.set(0, 0, 0.15)
-  u.rightArm.rotation.set(0, 0, -0.15)
-  u.leftLeg.rotation.set(0, 0, 0)
-  u.rightLeg.rotation.set(0, 0, 0)
-  u.head.rotation.set(0, 0, 0)
-  u.torso.rotation.set(0, 0, 0)
-  u.aura.scale.setScalar(1)
+  // Anclar al suelo: sin root motion horizontal (Y libre = se ve el baile)
+  if (u.hips && u.hipsHome) {
+    u.hips.position.x = u.hipsHome.x
+    u.hips.position.z = u.hipsHome.z
+  }
   fighter.position.y = 0
-  let facing = u.facing ?? 0
 
-  const i = u.intensity ?? 1
+  if (u.pose === 'idle' || u.pose === 'mewing' || u.pose === 'sigma-stare') {
+    u.aura.material.opacity = 0.1 + Math.sin(time * 1.5) * 0.03
+  }
+  u.ring.rotation.z = time * 0.6
+  fighter.rotation.y = u.facing ?? 0
+}
 
-  switch (u.pose) {
-    case 'aura-walk': {
-      const step = Math.sin(t * 6) * 0.35 * i
-      u.leftLeg.rotation.x = step
-      u.rightLeg.rotation.x = -step
-      u.leftArm.rotation.x = -step * 0.6
-      u.rightArm.rotation.x = step * 0.6
-      u.head.rotation.x = -0.1
-      break
-    }
-    case 'mewing': {
-      u.head.rotation.x = -0.15
-      u.leftArm.rotation.z = 0.4
-      u.rightArm.rotation.z = -0.4
-      u.aura.material.opacity = 0.18 + Math.sin(t * 4) * 0.06
-      break
-    }
-    case 'six-seven': {
-      const wave = Math.sin(t * 10) * 0.9 * i
-      u.leftArm.rotation.z = 1.2 + wave * 0.3
-      u.rightArm.rotation.z = -1.2 - wave * 0.3
-      u.leftArm.rotation.x = wave
-      u.rightArm.rotation.x = -wave
-      break
-    }
-    case 'sigma-stare': {
-      u.head.rotation.x = 0.05
-      facing += Math.sin(t * 2) * 0.02
-      u.leftArm.rotation.z = 0.55
-      u.rightArm.rotation.z = -0.55
-      u.aura.scale.setScalar(1 + Math.sin(t * 3) * 0.08 * i)
-      break
-    }
-    case 'boat-kid': {
-      const bounce = Math.abs(Math.sin(t * 8)) * 0.12 * i
-      fighter.position.y = bounce
-      u.leftArm.rotation.z = 1.4 + Math.sin(t * 8) * 0.4
-      u.rightArm.rotation.z = -0.2
-      u.torso.rotation.z = Math.sin(t * 8) * 0.15
-      break
-    }
-    case 'no-look': {
-      u.head.rotation.y = fighter.name === 'player' ? -0.8 : 0.8
-      u.rightArm.rotation.z = -1.6
-      u.rightArm.rotation.x = 0.4
-      facing += fighter.name === 'player' ? -0.35 : 0.35
-      break
-    }
-    case 'cringe': {
-      u.head.rotation.x = 0.35
-      u.leftArm.rotation.z = 1.1
-      u.rightArm.rotation.z = -1.1
-      fighter.position.y = Math.sin(t * 20) * 0.03
-      break
-    }
-    default: {
-      u.leftArm.rotation.z = 0.2 + Math.sin(time * 2) * 0.05
-      u.rightArm.rotation.z = -0.2 - Math.sin(time * 2) * 0.05
-      u.aura.material.opacity = 0.1 + Math.sin(time * 1.5) * 0.03
-    }
+
+/**
+ * Espectador del público — siempre con animación en loop (no parado).
+ */
+export async function createSpectator({
+  color = 0x8899aa,
+  height = 1.7,
+  timeScale = 1,
+  homeClip = 'idle',
+} = {}) {
+  const { base, clips } = await loadShared()
+  const root = new THREE.Group()
+  root.name = 'spectator'
+
+  const model = cloneSkeleton(base)
+  model.animations = []
+  tintModel(model, color)
+  fitModel(model, height)
+  root.add(model)
+
+  let hips = null
+  model.traverse((c) => {
+    if (hips) return
+    const n = c.name || ''
+    if (n === 'mixamorigHips' || n === 'Hips' || n.endsWith('Hips')) hips = c
+  })
+  const hipsHome = hips
+    ? { x: hips.position.x, y: hips.position.y, z: hips.position.z }
+    : null
+
+  const mixer = new THREE.AnimationMixer(model)
+  const actions = {}
+  for (const key of CROWD_CLIP_KEYS) {
+    const clip = clips[key]
+    if (!clip) continue
+    const action = mixer.clipAction(clip)
+    action.enabled = true
+    action.setLoop(THREE.LoopRepeat, Infinity)
+    actions[key] = action
   }
 
-  fighter.rotation.y = facing
+  const home = actions[homeClip] ? homeClip : 'idle'
+  const start = actions[home] || actions.idle
+  if (start) {
+    start.setEffectiveTimeScale(timeScale)
+    start.setEffectiveWeight(1)
+    start.play()
+    start.time = Math.random() * (start.getClip()?.duration || 1)
+  }
 
-  u.ring.rotation.z = time * 0.6
+  root.userData = {
+    model,
+    mixer,
+    hips,
+    hipsHome,
+    actions,
+    currentAction: start || null,
+    idleScale: timeScale,
+    homeClip: home,
+  }
+  return root
+}
+
+export function playSpectatorAnim(person, clipName, timeScale = 1) {
+  const u = person.userData
+  const next = u.actions?.[clipName]
+  if (!next) return
+
+  if (u.currentAction === next) {
+    next.setEffectiveTimeScale(timeScale)
+    next.setEffectiveWeight(1)
+    if (!next.isRunning()) next.play()
+    return
+  }
+
+  if (u.currentAction) {
+    u.currentAction.fadeOut(0.18)
+  }
+  next.reset()
+  next.setEffectiveTimeScale(timeScale)
+  next.setEffectiveWeight(1)
+  next.fadeIn(0.18)
+  next.play()
+  u.currentAction = next
+}
+
+export function updateSpectator(person, dt) {
+  const u = person.userData
+  u.mixer?.update(dt)
+  if (u.hips && u.hipsHome) {
+    u.hips.position.x = u.hipsHome.x
+    u.hips.position.z = u.hipsHome.z
+  }
+  person.position.y = 0
+}
+
+/** cheer = todos felicitan · boo = todos abuchean · meh = todos murmuran */
+export function setCrowdReaction(group, kind = 'cheer') {
+  let clips
+  if (kind === 'cheer') clips = ['cheering', 'clapping', 'rallying']
+  else if (kind === 'boo') clips = ['arguing', 'arguing']
+  else clips = ['arguing', 'clapping']
+
+  group.children.forEach((person, i) => {
+    const clip = clips[i % clips.length]
+    const scale = 1.15 + Math.random() * 0.25
+    playSpectatorAnim(person, clip, scale)
+    if (person.userData.currentAction) {
+      person.userData.currentAction.time = (i % 4) * 0.08
+    }
+  })
+}
+
+/** Vuelve cada uno a SU animación de espera (siempre en movimiento). */
+export function resetCrowdIdle(group) {
+  group.children.forEach((person) => {
+    const home = person.userData.homeClip || 'clapping'
+    playSpectatorAnim(person, home, person.userData.idleScale || 1)
+  })
+}
+
+/** Público en lados + atrás — todos animados desde el inicio. */
+export async function createCrowd(count = 14) {
+  const group = new THREE.Group()
+  group.name = 'crowd'
+  const colors = [0x4a5568, 0x2d3748, 0x718096, 0x5a4a6a, 0x3d5a5b, 0x6b4f4f, 0x455a64, 0x556677]
+  // Variedad: nadie quieto
+  const homeClips = ['clapping', 'arguing', 'cheering', 'idle', 'clapping', 'rallying', 'arguing', 'cheering']
+
+  const slots = []
+  for (let i = 0; i < count * 3 && slots.length < count; i++) {
+    const a = (i / (count * 3)) * Math.PI * 2 + 0.08
+    if (Math.sin(a) > 0.55) continue
+    slots.push(a)
+  }
+
+  const people = await Promise.all(
+    slots.map(async (angle, i) => {
+      const radius = 4.5 + (i % 3) * 0.5 + Math.random() * 0.25
+      const person = await createSpectator({
+        color: colors[i % colors.length],
+        height: 1.6 + Math.random() * 0.35,
+        timeScale: 0.9 + Math.random() * 0.35,
+        homeClip: homeClips[i % homeClips.length],
+      })
+      person.position.set(Math.cos(angle) * radius, 0, Math.sin(angle) * radius)
+      person.lookAt(0, 1.0, 0)
+      person.userData.bobPhase = Math.random() * Math.PI * 2
+      return person
+    }),
+  )
+
+  people.forEach((p) => group.add(p))
+  return group
 }

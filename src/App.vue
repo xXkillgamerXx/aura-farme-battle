@@ -36,6 +36,23 @@ const moveIndex = ref(0)
 const upgradeChoices = ref([])
 const crowdEvent = ref(null)
 const spaceDown = ref(false)
+let showTimer = null
+const SHOW_MS = 2800
+
+function clearShowTimer() {
+  if (showTimer != null) {
+    clearTimeout(showTimer)
+    showTimer = null
+  }
+}
+
+function scheduleAutoContinue() {
+  clearShowTimer()
+  showTimer = setTimeout(() => {
+    showTimer = null
+    onContinue()
+  }, SHOW_MS)
+}
 
 const inBattle = computed(() => screen.value === 'battle')
 const selectedMove = computed(() => MOVES[moveIndex.value])
@@ -48,6 +65,7 @@ function spawnFloat(payload) {
 }
 function spawnCrowd(kind) {
   crowdEvent.value = { kind, t: Date.now() }
+  bumpFx({ type: 'crowd', kind })
 }
 
 function resetRun() {
@@ -78,7 +96,7 @@ function onSelectMove(i) {
   const idx = ((i % MOVES.length) + MOVES.length) % MOVES.length
   moveIndex.value = idx
   battle.moveIndex = idx
-  battle.message = `${MOVES[idx].name} · SPACE para bailar`
+  battle.message = `${MOVES[idx].name} · doble clic / SPACE para bailar`
 }
 
 function startAbility() {
@@ -93,23 +111,40 @@ function startAbility() {
 function onTiming(accuracy) {
   const next = resolvePlayerAttack(battle, accuracy, run)
   Object.assign(battle, next)
+
+  // Combo en curso → reinicia la barra
+  if (next.phase === 'combo') {
+    const step = next.combo?.step || 1
+    spawnFloat({
+      who: 'player',
+      kind: 'up',
+      text: `COMBO ${step}/${next.combo.max}`,
+      x: window.innerWidth / 2,
+      y: 130,
+    })
+    bumpFx({ type: 'camera', mode: step === 1 ? 'close' : 'low' })
+    nextTick(() => timingRef.value?.start())
+    return
+  }
+
   const result = next.lastResult
   if (!result) return
 
-  // 1) baile + cámara
-  bumpFx({
-    type: 'move',
-    who: 'player',
-    moveId: result.move.id,
-    intensity: Math.max(0.55, result.accuracy),
-    hits: result.hits || 1,
-    camera: result.move.camera || 'side',
+  const hits = result.hits || 1
+  // nextTick: no dejar que otro fx pise el baile en el mismo tick
+  nextTick(() => {
+    bumpFx({
+      type: 'move',
+      who: 'player',
+      moveId: result.move.id,
+      intensity: Math.max(0.55, result.accuracy),
+      hits,
+      camera: hits >= 3 ? 'spin' : result.move.camera || 'side',
+    })
   })
 
-  // 2) crowd reacciona
   setTimeout(() => spawnCrowd(result.crowd || result.tier.crowd || 'meh'), 280)
 
-  // 3) feedback barras
   setTimeout(() => {
     const p = sceneRef.value?.projectToScreen?.('player') ?? { x: 140, y: 220 }
     const r = sceneRef.value?.projectToScreen?.('rival') ?? { x: window.innerWidth * 0.7, y: 220 }
@@ -118,11 +153,11 @@ function onTiming(accuracy) {
       spawnFloat({ who: 'player', kind: 'up', text: `+${result.auraGain} AURA`, x: p.x, y: p.y })
     }
     if (result.cringeGain > 0) {
-      bumpFx({ type: 'shame', who: 'player' })
+      bumpFx({ type: 'aura', who: 'player', amount: -result.cringeGain })
       spawnFloat({ who: 'player', kind: 'down', text: `+${result.cringeGain} CRINGE`, x: p.x, y: p.y + 36 })
     }
     if (result.rivalCringeGain > 0) {
-      bumpFx({ type: 'shame', who: 'rival' })
+      bumpFx({ type: 'aura', who: 'rival', amount: -result.rivalCringeGain })
       spawnFloat({
         who: 'rival',
         kind: 'down',
@@ -131,11 +166,21 @@ function onTiming(accuracy) {
         y: r.y,
       })
     }
-    if (result.hits > 1) {
+    if (result.rivalAuraDrain > 0) {
+      bumpFx({ type: 'aura', who: 'rival', amount: -result.rivalAuraDrain })
+      spawnFloat({
+        who: 'rival',
+        kind: 'down',
+        text: `−${result.rivalAuraDrain} AURA`,
+        x: r.x,
+        y: r.y + 40,
+      })
+    }
+    if (hits >= 2) {
       spawnFloat({
         who: 'player',
         kind: 'up',
-        text: 'DOBLE BAILE',
+        text: hits >= 3 ? 'COMBO x3' : 'COMBO x2',
         x: window.innerWidth / 2,
         y: 120,
       })
@@ -144,57 +189,65 @@ function onTiming(accuracy) {
 }
 
 function playRivalTurn() {
+  // Cierra tu turno: tú a idle, luego baila el rival
+  bumpFx({ type: 'reset' })
+  battle.message = `${battle.rival.name} ataca…`
+
   const next = resolveRivalAttack(battle)
   Object.assign(battle, next)
   const result = next.lastResult
   if (!result || result.side !== 'rival') return
 
-  bumpFx({
-    type: 'move',
-    who: 'rival',
-    moveId: result.move.id,
-    intensity: 0.9,
-    hits: result.hits || 1,
-    camera: result.move.camera || 'side',
-  })
-
-  setTimeout(() => spawnCrowd(result.crowd || result.tier.crowd || 'meh'), 280)
-
+  // Pequeña pausa estilo Pokémon entre turnos
   setTimeout(() => {
-    const p = sceneRef.value?.projectToScreen?.('player') ?? { x: 140, y: 220 }
-    const r = sceneRef.value?.projectToScreen?.('rival') ?? { x: window.innerWidth * 0.7, y: 220 }
-    // Rival bien: te baja AURA (no cringe)
-    if (result.auraLoss > 0) {
-      bumpFx({ type: 'aura', who: 'player', amount: -result.auraLoss })
-      spawnFloat({
-        who: 'player',
-        kind: 'down',
-        text: `-${result.auraLoss} AURA`,
-        x: p.x,
-        y: p.y,
-      })
-    }
-    if (result.auraGain > 0) {
-      bumpFx({ type: 'aura', who: 'rival', amount: result.auraGain })
-      spawnFloat({
-        who: 'rival',
-        kind: 'up',
-        text: `+${result.auraGain} AURA`,
-        x: r.x,
-        y: r.y,
-      })
-    }
-    if (result.rivalCringeGain > 0) {
-      bumpFx({ type: 'shame', who: 'rival' })
-      spawnFloat({
-        who: 'rival',
-        kind: 'down',
-        text: `+${result.rivalCringeGain} CRINGE`,
-        x: r.x,
-        y: r.y + 36,
-      })
-    }
-  }, 650)
+    if (battle.phase !== 'rivalShow' && battle.phase !== 'matchEnd') return
+    if (!result?.move) return
+    bumpFx({
+      type: 'move',
+      who: 'rival',
+      moveId: result.move.id,
+      intensity: 0.9,
+      hits: result.hits || 1,
+      camera: result.move.camera || 'side',
+    })
+
+    setTimeout(() => spawnCrowd(result.crowd || result.tier.crowd || 'meh'), 280)
+
+    setTimeout(() => {
+      const p = sceneRef.value?.projectToScreen?.('player') ?? { x: 140, y: 220 }
+      const r = sceneRef.value?.projectToScreen?.('rival') ?? { x: window.innerWidth * 0.7, y: 220 }
+      if (result.auraLoss > 0) {
+        bumpFx({ type: 'aura', who: 'player', amount: -result.auraLoss })
+        spawnFloat({
+          who: 'player',
+          kind: 'down',
+          text: `-${result.auraLoss} AURA`,
+          x: p.x,
+          y: p.y,
+        })
+      }
+      if (result.auraGain > 0) {
+        bumpFx({ type: 'aura', who: 'rival', amount: result.auraGain })
+        spawnFloat({
+          who: 'rival',
+          kind: 'up',
+          text: `+${result.auraGain} AURA`,
+          x: r.x,
+          y: r.y,
+        })
+      }
+      if (result.rivalCringeGain > 0) {
+        bumpFx({ type: 'aura', who: 'rival', amount: -result.rivalCringeGain })
+        spawnFloat({
+          who: 'rival',
+          kind: 'down',
+          text: `+${result.rivalCringeGain} CRINGE`,
+          x: r.x,
+          y: r.y + 36,
+        })
+      }
+    }, 650)
+  }, 450)
 }
 
 function onWinFlow() {
@@ -215,9 +268,9 @@ function onUpgradePick(id) {
 }
 
 function onContinue() {
+  clearShowTimer()
   if (battle.phase === 'matchEnd') {
     if (battle.outcome === 'lose') {
-      // stay on lose until SPACE → menu
       return
     }
     if (battle.outcome === 'win') onWinFlow()
@@ -229,12 +282,14 @@ function onContinue() {
       battle.message = WIN_LINE
       return
     }
+    // Tu baile terminó → turno del rival (no los dos a la vez)
     playRivalTurn()
     return
   }
   if (battle.phase === 'rivalShow') {
     Object.assign(battle, nextPlayerTurn(battle))
     bumpFx({ type: 'reset' })
+    bumpFx({ type: 'camera', mode: 'idle' })
   }
 }
 
@@ -248,8 +303,8 @@ function handleSpace() {
   if (!inBattle.value) return
 
   if (battle.phase === 'pick') startAbility()
-  else if (battle.phase === 'timing') timingRef.value?.lock()
-  else if (battle.phase === 'playerShow' || battle.phase === 'rivalShow') onContinue()
+  else if (battle.phase === 'timing' || battle.phase === 'combo') timingRef.value?.lock()
+  // playerShow / rivalShow avanzan solos tras la animación
   else if (battle.phase === 'matchEnd') {
     if (battle.outcome === 'lose') {
       resetRun()
@@ -303,6 +358,7 @@ onMounted(() => {
   window.addEventListener('keyup', onKeyUp)
 })
 onBeforeUnmount(() => {
+  clearShowTimer()
   window.removeEventListener('keydown', onKeyDown)
   window.removeEventListener('keyup', onKeyUp)
 })
@@ -310,7 +366,22 @@ onBeforeUnmount(() => {
 watch(
   () => battle.phase,
   (phase) => {
-    if (phase === 'timing') nextTick(() => timingRef.value?.start())
+    if (phase === 'timing' || phase === 'combo') nextTick(() => timingRef.value?.start())
+    if (phase === 'playerShow' || phase === 'rivalShow') {
+      const hits = battle.lastResult?.hits || 1
+      clearShowTimer()
+      showTimer = setTimeout(() => {
+        showTimer = null
+        onContinue()
+      }, SHOW_MS + (hits > 1 ? 400 * (hits - 1) : 0))
+    } else clearShowTimer()
+
+    // No pisar fx 'move' en playerShow/rivalShow (si no, no baila)
+    if (phase === 'pick' || phase === 'timing' || phase === 'combo') {
+      bumpFx({ type: 'attacker', who: 'player' })
+    } else if (phase === 'matchEnd' || phase === 'menu') {
+      bumpFx({ type: 'attacker', who: null })
+    }
   },
 )
 </script>
@@ -377,17 +448,19 @@ watch(
         :outcome="battle.outcome"
         :floor="run.floor + 1"
         :max-floors="run.maxFloors"
+        :combo="battle.combo"
         @select-move="onSelectMove"
         @attack="startAbility"
         @continue="onContinue"
         @restart="() => { resetRun(); goMenu() }"
       />
 
-      <div v-if="battle.phase === 'timing'" class="timing-wrap">
+      <div v-if="battle.phase === 'timing' || battle.phase === 'combo'" class="timing-wrap">
         <TimingBar
           ref="timingRef"
           :active="true"
           :move="battle.selectedMove || selectedMove"
+          :combo="battle.combo"
           @hit="onTiming"
         />
       </div>

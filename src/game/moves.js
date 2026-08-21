@@ -1,79 +1,152 @@
+/**
+ * Moves = bailes con efectos distintos.
+ *
+ * effect:
+ *  - aura   → farmea AURA (clásico)
+ *  - drain  → te da AURA y baja AURA del rival
+ *  - shame  → mete más CRINGE al rival
+ *  - safe   → si fallas, menos CRINGE propio
+ *  - combo  → abre combo también con OK (no solo ÉPICO/ICÓNICO)
+ *  - gamble → mucho poder, pero fallar duele más
+ */
+
+export const EFFECT_LABELS = {
+  aura: { short: 'AURA', tip: 'Farmea aura' },
+  drain: { short: 'ROBO', tip: 'Roba aura al rival' },
+  shame: { short: 'VERGÜENZA', tip: 'Sube cringe rival' },
+  safe: { short: 'SAFE', tip: 'Fallo menos doloroso' },
+  combo: { short: 'COMBO', tip: 'Combo más fácil' },
+  gamble: { short: 'RIESGO', tip: 'Alto riesgo / recompensa' },
+}
+
 /** Moves = bailes de farmeo de aura */
 export const MOVES = [
   {
     id: 'aura-walk',
-    name: 'Aura Walk',
+    name: 'Step Hip Hop',
     tag: 'baile',
+    effect: 'aura',
     power: 22,
     risk: 0.12,
-    desc: 'Caminata lenta. El rival se siente pequeño.',
+    desc: 'Flow estable. Buen farmeo de AURA.',
     color: '#4cc9f0',
-    bar: { zone: 0.5, width: 0.14, speed: 1.0 },
+    bar: { zone: 0.5, width: 0.15, speed: 1.0 },
     camera: 'side',
+    anim: 'step',
   },
   {
     id: 'mewing',
     name: 'Mewing',
     tag: 'pose',
-    power: 18,
-    risk: 0.08,
-    desc: 'Mandíbula. Silencio. Vergüenza ajena.',
+    effect: 'safe',
+    power: 17,
+    risk: 0.06,
+    desc: 'Pose fría. Si fallas, casi no te da cringe.',
     color: '#80ed99',
-    bar: { zone: 0.55, width: 0.18, speed: 0.85 },
+    bar: { zone: 0.55, width: 0.2, speed: 0.8 },
     camera: 'close',
+    anim: 'wave',
+    animSpeed: 0.5,
   },
   {
     id: 'six-seven',
-    name: 'Six Seven',
+    name: 'Wave Hip Hop',
     tag: 'baile',
-    power: 26,
-    risk: 0.22,
-    desc: 'Gesto viral. Si fallas = abucheo.',
+    effect: 'combo',
+    power: 20,
+    risk: 0.16,
+    desc: 'Ritmo viral. Abre combo desde un OK.',
     color: '#ffd166',
-    bar: { zone: 0.38, width: 0.11, speed: 1.35 },
+    bar: { zone: 0.42, width: 0.13, speed: 1.2 },
     camera: 'low',
+    anim: 'wave',
+    animSpeed: 1.25,
   },
   {
     id: 'sigma-stare',
     name: 'Sigma Stare',
     tag: 'pose',
-    power: 20,
+    effect: 'shame',
+    power: 18,
     risk: 0.1,
-    desc: 'Mirada fija. El crowd susurra hooo.',
+    desc: 'Mirada asesina. Empuja CRINGE al rival.',
     color: '#c77dff',
-    bar: { zone: 0.62, width: 0.13, speed: 0.95 },
+    bar: { zone: 0.6, width: 0.14, speed: 0.9 },
     camera: 'close',
+    anim: 'wave',
+    animSpeed: 0.4,
   },
   {
     id: 'boat-kid',
-    name: 'Boat Rhythm',
+    name: 'Chicken Dance',
     tag: 'baile',
-    power: 28,
+    effect: 'drain',
+    power: 24,
     risk: 0.18,
-    desc: 'Ritmo del barco. Baile frío.',
+    desc: 'Clásico tóxico: te sube AURA y le baja al rival.',
     color: '#f72585',
-    bar: { zone: 0.48, width: 0.12, speed: 1.2 },
+    bar: { zone: 0.48, width: 0.12, speed: 1.15 },
     camera: 'spin',
+    anim: 'chicken',
+    animSpeed: 1.1,
   },
   {
     id: 'no-look',
     name: 'No Look Flex',
     tag: 'flex',
-    power: 24,
-    risk: 0.25,
-    desc: 'Ni miras. O eres leyenda… o cringe.',
+    effect: 'gamble',
+    power: 30,
+    risk: 0.32,
+    desc: 'All-in. ICÓNICO = jackpot. Fallo = cringe brutal.',
     color: '#ff9f1c',
-    bar: { zone: 0.7, width: 0.1, speed: 1.45 },
+    bar: { zone: 0.68, width: 0.09, speed: 1.5 },
     camera: 'side',
+    anim: 'wave',
+    animSpeed: 1.05,
   },
 ]
 
 export const RIVALS = [
-  { name: 'El Plaza Kid', style: 'meme', color: 0xf72585, difficulty: 0.4, hp: 90 },
-  { name: 'Sigma del Parque', style: 'pose', color: 0xc77dff, difficulty: 0.52, hp: 100 },
-  { name: 'Streamer Local', style: 'flex', color: 0xff9f1c, difficulty: 0.62, hp: 110 },
-  { name: 'TikTok Boss', style: 'dance', color: 0x4cc9f0, difficulty: 0.72, hp: 120 },
-  { name: 'Rey del Fame', style: 'flex', color: 0xffd166, difficulty: 0.85, hp: 140 },
+  {
+    name: 'El Plaza Kid',
+    style: 'meme',
+    color: 0xf72585,
+    difficulty: 0.4,
+    hp: 90,
+    prefers: ['boat-kid', 'six-seven'],
+  },
+  {
+    name: 'Sigma del Parque',
+    style: 'pose',
+    color: 0xc77dff,
+    difficulty: 0.52,
+    hp: 100,
+    prefers: ['sigma-stare', 'mewing'],
+  },
+  {
+    name: 'Streamer Local',
+    style: 'flex',
+    color: 0xff9f1c,
+    difficulty: 0.62,
+    hp: 110,
+    prefers: ['no-look', 'aura-walk'],
+  },
+  {
+    name: 'TikTok Boss',
+    style: 'dance',
+    color: 0x4cc9f0,
+    difficulty: 0.72,
+    hp: 120,
+    prefers: ['six-seven', 'boat-kid', 'aura-walk'],
+  },
+  {
+    name: 'Rey del Fame',
+    style: 'flex',
+    color: 0xffd166,
+    difficulty: 0.85,
+    hp: 140,
+    prefers: ['no-look', 'boat-kid', 'sigma-stare'],
+  },
 ]
 
 export const UPGRADES = [
@@ -127,6 +200,22 @@ export const UPGRADES = [
     desc: 'Los misses llenan menos CRINGE',
     apply: (run) => {
       run.noSelfCringe = true
+    },
+  },
+  {
+    id: 'drain-up',
+    name: 'Ladrón de Aura',
+    desc: 'Habilidades ROBO quitan +30% aura rival',
+    apply: (run) => {
+      run.drainBonus = (run.drainBonus || 0) + 0.3
+    },
+  },
+  {
+    id: 'combo-up',
+    name: 'Flow State',
+    desc: 'Combos dan +20% AURA extra',
+    apply: (run) => {
+      run.comboBonus = (run.comboBonus || 0) + 0.2
     },
   },
 ]

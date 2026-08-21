@@ -1,6 +1,6 @@
 <script setup>
 import { computed } from 'vue'
-import { MOVES } from '../game/moves.js'
+import { MOVES, EFFECT_LABELS } from '../game/moves.js'
 
 const props = defineProps({
   phase: String,
@@ -18,14 +18,30 @@ const props = defineProps({
   outcome: String,
   floor: Number,
   maxFloors: Number,
+  combo: { type: Object, default: null },
 })
 
-defineEmits(['select-move', 'attack', 'continue', 'restart'])
+const emit = defineEmits(['select-move', 'attack', 'continue', 'restart'])
 
 const pAura = computed(() => (props.playerAura / props.auraMax) * 100)
 const pCringe = computed(() => (props.playerCringe / props.cringeMax) * 100)
 const rAura = computed(() => (props.rivalAura / props.auraMax) * 100)
 const rCringe = computed(() => (props.rivalCringe / props.cringeMax) * 100)
+
+/** Clic = elegir · segundo clic / doble clic = usar */
+function onMoveClick(i) {
+  if (props.moveIndex === i) emit('attack')
+  else emit('select-move', i)
+}
+const turnBanner = computed(() => {
+  if (props.phase === 'pick' || props.phase === 'timing') return { text: 'TU TURNO', side: 'you' }
+  if (props.phase === 'combo') return { text: `COMBO ${props.combo?.step || 1}/${props.combo?.max || 2}`, side: 'you' }
+  if (props.phase === 'playerShow') return { text: 'TÚ BAILAS', side: 'you' }
+  if (props.phase === 'rivalShow') return { text: 'TURNO RIVAL', side: 'rival' }
+  if (props.outcome === 'win') return { text: 'VICTORIA', side: 'you' }
+  if (props.outcome === 'lose') return { text: 'DERROTA', side: 'rival' }
+  return null
+})
 </script>
 
 <template>
@@ -37,7 +53,7 @@ const rCringe = computed(() => (props.rivalCringe / props.cringeMax) * 100)
           <h1>Aura Battle</h1>
         </div>
         <div class="score">
-          <span v-if="phase === 'pick'">Elige (← →)</span>
+          <span v-if="phase === 'pick'">Elige (clic)</span>
           <span v-else-if="phase === 'timing'">Ritmo</span>
           <span v-else-if="outcome === 'win'">Victoria</span>
           <span v-else-if="outcome === 'lose'">Derrota</span>
@@ -45,8 +61,12 @@ const rCringe = computed(() => (props.rivalCringe / props.cringeMax) * 100)
         </div>
       </header>
 
+      <div v-if="turnBanner" class="turn-banner" :class="turnBanner.side">
+        {{ turnBanner.text }}
+      </div>
+
       <div class="fighters">
-        <div class="fighter you">
+        <div class="fighter you" :class="{ active: turnBanner?.side === 'you' }">
           <p class="name">Tú</p>
           <div class="meter aura">
             <div class="meta"><strong>AURA</strong><span>{{ Math.round(playerAura) }}</span></div>
@@ -60,7 +80,7 @@ const rCringe = computed(() => (props.rivalCringe / props.cringeMax) * 100)
 
         <div class="vs">VS</div>
 
-        <div class="fighter rival">
+        <div class="fighter rival" :class="{ active: turnBanner?.side === 'rival' }">
           <p class="name">{{ rivalName }}</p>
           <div class="meter aura">
             <div class="meta"><strong>AURA</strong><span>{{ Math.round(rivalAura) }}</span></div>
@@ -74,7 +94,7 @@ const rCringe = computed(() => (props.rivalCringe / props.cringeMax) * 100)
       </div>
 
       <p class="legend">
-        Meta: 100 AURA · Si tu CRINGE llega a 100 primero, pierdes · Rival bien = te baja AURA (no cringe)
+        El círculo dorado es la <strong>plaza</strong> (ring de baile). Meta: 100 AURA · CRINGE 100 = pierdes
       </p>
 
       <p class="message">{{ message }}</p>
@@ -99,17 +119,20 @@ const rCringe = computed(() => (props.rivalCringe / props.cringeMax) * 100)
           class="move"
           :class="{ on: i === moveIndex }"
           :style="{ '--c': m.color }"
-          @click="$emit('select-move', i)"
+          @click="onMoveClick(i)"
         >
           <div class="move-top">
             <strong>{{ m.name }}</strong>
             <kbd>{{ i + 1 }}</kbd>
           </div>
-          <small>poder {{ m.power }}</small>
+          <small>
+            <span class="eff">{{ EFFECT_LABELS[m.effect]?.short || m.tag }}</span>
+            · poder {{ m.power }}
+          </small>
         </button>
       </div>
       <div class="dock-footer">
-        <p class="hint">← → seleccionar · SPACE una vez</p>
+        <p class="hint">clic elige · doble clic usa</p>
         <button type="button" class="attack-btn" @click="$emit('attack')">
           USAR BAILE <kbd>SPACE</kbd>
         </button>
@@ -117,7 +140,7 @@ const rCringe = computed(() => (props.rivalCringe / props.cringeMax) * 100)
     </div>
 
     <div
-      v-if="phase === 'playerShow' || phase === 'rivalShow' || (phase === 'matchEnd' && outcome === 'win')"
+      v-if="phase === 'matchEnd' && outcome === 'win'"
       class="actions"
     >
       <button type="button" class="primary" @click="$emit('continue')">
@@ -136,6 +159,7 @@ const rCringe = computed(() => (props.rivalCringe / props.cringeMax) * 100)
   justify-content: space-between;
   gap: 0.45rem;
   pointer-events: none;
+  position: relative;
 }
 .hud :is(button, .moves, .actions, .attack-dock) {
   pointer-events: auto;
@@ -172,6 +196,31 @@ const rCringe = computed(() => (props.rivalCringe / props.cringeMax) * 100)
   color: var(--muted);
   white-space: nowrap;
 }
+.turn-banner {
+  justify-self: center;
+  padding: 0.35rem 1.1rem;
+  border-radius: 999px;
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: clamp(1.1rem, 3.5vw, 1.45rem);
+  letter-spacing: 0.08em;
+  text-align: center;
+  border: 1px solid transparent;
+  animation: bannerIn 0.35s ease;
+}
+.turn-banner.you {
+  color: #041018;
+  background: linear-gradient(135deg, #4cc9f0, #80ed99);
+  box-shadow: 0 0 24px rgba(76, 201, 240, 0.45);
+}
+.turn-banner.rival {
+  color: #fff;
+  background: linear-gradient(135deg, #f72585, #ff6b6b);
+  box-shadow: 0 0 24px rgba(247, 37, 133, 0.45);
+}
+@keyframes bannerIn {
+  from { opacity: 0; transform: translateY(-6px) scale(0.96); }
+  to { opacity: 1; transform: none; }
+}
 .fighters {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
@@ -181,12 +230,22 @@ const rCringe = computed(() => (props.rivalCringe / props.cringeMax) * 100)
 .fighter {
   padding: 0.5rem 0.55rem;
   border-radius: 12px;
-  background: var(--panel);
+  background: rgba(10, 14, 24, 0.88);
   border: 1px solid var(--line);
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(12px);
   display: grid;
   gap: 0.3rem;
   min-width: 0;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  transition: border-color 0.25s, box-shadow 0.25s;
+}
+.fighter.active.you {
+  border-color: rgba(76, 201, 240, 0.85);
+  box-shadow: 0 0 0 1px rgba(76, 201, 240, 0.35), 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+.fighter.active.rival {
+  border-color: rgba(247, 37, 133, 0.85);
+  box-shadow: 0 0 0 1px rgba(247, 37, 133, 0.35), 0 8px 24px rgba(0, 0, 0, 0.35);
 }
 .fighter .name {
   margin: 0;
@@ -252,32 +311,38 @@ const rCringe = computed(() => (props.rivalCringe / props.cringeMax) * 100)
 .dmg { color: #ff6b6b; font-weight: 700; }
 .up { color: #80ed99; font-weight: 700; }
 .x2 { color: #ffd166; font-weight: 800; }
+
+/* Menú habilidades: esquina inferior derecha, compacto en PC */
 .attack-dock {
-  width: 100%;
+  position: absolute;
+  right: 0.35rem;
+  bottom: 0.35rem;
+  width: min(300px, 34vw);
   flex-shrink: 0;
-  padding: 0.55rem 0.55rem 0.65rem;
-  border-radius: 16px;
-  background: rgba(8, 12, 24, 0.92);
+  padding: 0.4rem;
+  border-radius: 12px;
+  background: rgba(8, 12, 24, 0.9);
   border: 1px solid rgba(255, 255, 255, 0.12);
   backdrop-filter: blur(14px);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
 }
 .moves {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 0.35rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.28rem;
   width: 100%;
 }
 .move {
   text-align: left;
-  padding: 0.5rem 0.4rem;
-  border-radius: 10px;
+  padding: 0.32rem 0.35rem;
+  border-radius: 8px;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid color-mix(in srgb, var(--c) 40%, transparent);
   color: var(--ink);
   display: grid;
-  gap: 0.1rem;
+  gap: 0.05rem;
   min-width: 0;
-  min-height: 44px;
+  min-height: 0;
 }
 .move.on {
   border-color: var(--c);
@@ -287,37 +352,48 @@ const rCringe = computed(() => (props.rivalCringe / props.cringeMax) * 100)
   display: flex;
   justify-content: space-between;
   gap: 0.15rem;
+  align-items: start;
 }
 .move-top strong {
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   line-height: 1.1;
 }
 .move small {
   color: var(--muted);
-  font-size: 0.58rem;
+  font-size: 0.52rem;
   text-transform: uppercase;
 }
+.move .eff {
+  color: var(--c);
+  font-weight: 700;
+}
 .dock-footer {
-  margin-top: 0.5rem;
+  margin-top: 0.35rem;
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 0.65rem;
-  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.4rem;
+  flex-wrap: nowrap;
 }
 .hint {
   margin: 0;
   color: var(--muted);
-  font-size: 0.7rem;
+  font-size: 0.58rem;
+  line-height: 1.2;
+  flex: 1;
+  min-width: 0;
 }
 .attack-btn {
-  border-radius: 12px;
-  padding: 0.8rem 1.2rem;
-  min-height: 48px;
+  border-radius: 9px;
+  padding: 0.45rem 0.65rem;
+  min-height: 0;
   background: linear-gradient(135deg, #f72585, #ff9f1c);
   color: #fff;
   font-weight: 800;
-  width: min(100%, 280px);
+  font-size: 0.68rem;
+  width: auto;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 .actions {
   display: flex;
@@ -341,7 +417,7 @@ kbd {
   border-radius: 5px;
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.14);
-  font-size: 0.62rem;
+  font-size: 0.58rem;
   color: #fff;
 }
 .attack-btn kbd,
@@ -357,18 +433,25 @@ kbd {
   .vs { display: none; }
   .legend { display: none; }
   .brand h1 { font-size: 1.5rem; }
+  .attack-dock {
+    position: relative;
+    right: auto;
+    bottom: auto;
+    width: 100%;
+    padding: 0.5rem;
+  }
   .moves {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 0.3rem;
   }
   .move {
-    min-height: 52px;
-    padding: 0.55rem 0.4rem;
+    min-height: 48px;
+    padding: 0.5rem 0.35rem;
   }
-  .move-top strong { font-size: 0.78rem; }
-  .attack-btn { width: 100%; }
-  .dock-footer { flex-direction: column; }
-  .hint { order: 2; }
+  .move-top strong { font-size: 0.74rem; }
+  .dock-footer { flex-wrap: wrap; justify-content: center; }
+  .attack-btn { width: 100%; min-height: 44px; font-size: 0.85rem; }
+  .hint { order: 2; text-align: center; flex: 1 1 100%; }
 }
 @media (max-width: 400px) {
   .move small { display: none; }

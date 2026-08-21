@@ -20,6 +20,11 @@ function confirm() {
   emit('start')
 }
 
+function onItemClick(i) {
+  if (selected.value === i) confirm()
+  else selected.value = i
+}
+
 function onKey(e) {
   if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
     e.preventDefault()
@@ -55,7 +60,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           class="nav-item"
           :class="{ on: selected === i }"
           @mouseenter="selected = i"
-          @click="selected = i; confirm()"
+          @click="onItemClick(i)"
         >
           <span class="cursor">▶</span>
           <span>
@@ -66,8 +71,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       </nav>
 
       <div class="keys">
-        <div class="desk"><kbd>←</kbd><kbd>→</kbd> elegir · <kbd>SPACE</kbd> usar</div>
-        <div class="mob">En móvil: toca habilidades y USAR BAILE</div>
+        <div class="desk"><kbd>clic</kbd> elegir · <kbd>doble clic</kbd> / <kbd>SPACE</kbd> entrar</div>
+        <div class="mob">Toca para elegir · toca otra vez para entrar</div>
         <div>Mapa roguelite · mejoras · 5 peleas</div>
       </div>
 
@@ -75,7 +80,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         <h2>Cómo se juega</h2>
         <ol>
           <li>Mapa: entra a la pelea actual.</li>
-          <li>← → selecciona habilidad. SPACE la usa.</li>
+          <li>Clic elige habilidad · doble clic (o SPACE) la usa.</li>
           <li>Barra: ICÓNICO = más daño (a veces x2).</li>
           <li>Si ganas: “SOY EL MÁS PERRÓN” y eliges mejora.</li>
           <li>AURA se llena si bailas bien. CRINGE si fallas — CRINGE lleno = PERDISTE.</li>

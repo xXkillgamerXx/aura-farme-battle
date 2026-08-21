@@ -8,11 +8,17 @@ const props = defineProps({
 const emit = defineEmits(['fight', 'menu'])
 
 const nodes = computed(() => mapNodes(props.run))
-const selected = ref(0)
+const selected = ref(props.run.floor)
 
 function confirm() {
   const n = nodes.value[props.run.floor]
   if (n) emit('fight')
+}
+
+function onNodeClick(n) {
+  if (n.state !== 'current') return
+  if (selected.value === n.index) confirm()
+  else selected.value = n.index
 }
 
 function onKey(e) {
@@ -41,11 +47,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           v-for="n in nodes"
           :key="n.index"
           class="node"
-          :class="[n.state, { boss: n.boss }]"
+          :class="[n.state, { boss: n.boss, on: selected === n.index && n.state === 'current' }]"
+          @click="onNodeClick(n)"
         >
           <span class="dot" />
           <strong>{{ n.boss ? 'BOSS · ' : '' }}{{ n.name }}</strong>
-          <small v-if="n.state === 'current'">← pelea actual</small>
+          <small v-if="n.state === 'current'">doble clic / SPACE</small>
           <small v-else-if="n.state === 'done'">ganada</small>
           <small v-else>bloqueada</small>
         </div>
@@ -128,6 +135,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 .node.current {
   border-color: rgba(255, 209, 102, 0.5);
   background: rgba(255, 209, 102, 0.08);
+  cursor: pointer;
+}
+.node.current.on {
+  border-color: rgba(76, 201, 240, 0.65);
+  background: rgba(76, 201, 240, 0.12);
 }
 .node.current .dot {
   background: #ffd166;
