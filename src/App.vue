@@ -502,6 +502,7 @@ watch(
   padding: 0.25rem 0 max(0.35rem, var(--safe-bottom));
   margin-top: auto;
   flex-shrink: 0;
+  z-index: 12;
 }
 .banner {
   position: absolute;

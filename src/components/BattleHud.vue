@@ -312,19 +312,22 @@ const turnBanner = computed(() => {
 .up { color: #80ed99; font-weight: 700; }
 .x2 { color: #ffd166; font-weight: 800; }
 
-/* Menú habilidades: esquina inferior derecha, compacto en PC */
+/* Menú habilidades: abajo al centro */
 .attack-dock {
   position: absolute;
-  right: 0.35rem;
-  bottom: 0.35rem;
-  width: min(300px, 34vw);
+  left: 50%;
+  bottom: 0.5rem;
+  top: auto;
+  transform: translateX(-50%);
+  width: min(480px, calc(100% - 1.5rem));
   flex-shrink: 0;
-  padding: 0.4rem;
-  border-radius: 12px;
-  background: rgba(8, 12, 24, 0.9);
+  padding: 0.55rem;
+  border-radius: 14px;
+  background: rgba(8, 12, 24, 0.92);
   border: 1px solid rgba(255, 255, 255, 0.12);
   backdrop-filter: blur(14px);
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
+  z-index: 8;
 }
 .moves {
   display: grid;
@@ -434,10 +437,11 @@ kbd {
   .legend { display: none; }
   .brand h1 { font-size: 1.5rem; }
   .attack-dock {
-    position: relative;
-    right: auto;
-    bottom: auto;
-    width: 100%;
+    left: 50%;
+    bottom: 0.35rem;
+    top: auto;
+    transform: translateX(-50%);
+    width: min(480px, calc(100% - 1rem));
     padding: 0.5rem;
   }
   .moves {

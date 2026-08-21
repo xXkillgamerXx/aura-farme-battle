@@ -151,7 +151,8 @@ defineExpose({ start, stop, lock })
   background: var(--panel);
   border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
   backdrop-filter: blur(10px);
-  width: min(460px, 100%);
+  width: min(620px, 100%);
+  margin-inline: auto;
   box-shadow: 0 0 24px color-mix(in srgb, var(--accent) 25%, transparent);
 }
 

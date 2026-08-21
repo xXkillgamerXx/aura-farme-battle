@@ -94,6 +94,7 @@ async function loadShared() {
 
 function tintModel(model, color) {
   const tint = new THREE.Color(color)
+  const mats = []
   model.traverse((child) => {
     if (!child.isMesh) return
     // Ocultar esqueleto visual de Mixamo (Beta_Joints)
@@ -111,11 +112,16 @@ function tintModel(model, color) {
         map: m.map || null,
         roughness: 0.55,
         metalness: 0.08,
+        transparent: true,
+        opacity: 1,
+        depthWrite: true,
       })
+      mats.push(mat)
       return mat
     })
     child.material = cloned.length === 1 ? cloned[0] : cloned
   })
+  return mats
 }
 
 function fitModel(model, targetHeight = 2.05) {
@@ -284,7 +290,7 @@ export async function createSpectator({
 
   const model = cloneSkeleton(base)
   model.animations = []
-  tintModel(model, color)
+  const mats = tintModel(model, color)
   fitModel(model, height)
   root.add(model)
 
@@ -327,8 +333,55 @@ export async function createSpectator({
     currentAction: start || null,
     idleScale: timeScale,
     homeClip: home,
+    mats,
+    opacity: 1,
   }
   return root
+}
+
+/** Si el NPC tapa la cámara → pelea, se vuelve transparente. */
+export function setSpectatorOpacity(person, opacity) {
+  const o = Math.max(0.1, Math.min(1, opacity))
+  if (Math.abs((person.userData.opacity ?? 1) - o) < 0.02) return
+  person.userData.opacity = o
+  const mats = person.userData.mats || []
+  for (const m of mats) {
+    m.opacity = o
+    m.transparent = o < 0.98
+    m.depthWrite = o > 0.82
+  }
+}
+
+const _cam = new THREE.Vector3()
+const _toFocus = new THREE.Vector3()
+const _toP = new THREE.Vector3()
+const _lat = new THREE.Vector3()
+
+/** Hace transparentes a los del público que quedan entre la cámara y el ring. */
+export function updateCrowdOcclusion(group, camera, focus) {
+  if (!group?.children?.length) return
+  camera.getWorldPosition(_cam)
+  _toFocus.set(focus.x - _cam.x, focus.y - _cam.y, focus.z - _cam.z)
+  const distF = _toFocus.length()
+  if (distF < 0.2) return
+  _toFocus.multiplyScalar(1 / distF)
+
+  for (const person of group.children) {
+    _toP.set(person.position.x - _cam.x, 1.05 - _cam.y, person.position.z - _cam.z)
+    const along = _toP.dot(_toFocus)
+    _lat.copy(_toP).addScaledVector(_toFocus, -along)
+    const lateral = _lat.length()
+
+    let opacity = 1
+    // Entre cámara y pelea, cerca del eje de la vista
+    if (along > 0.6 && along < distF + 0.6 && lateral < 2.4) {
+      const nearAxis = 1 - lateral / 2.4
+      const inPath = 1 - Math.min(1, Math.abs(along / distF - 0.5) * 1.4)
+      opacity = 1 - nearAxis * (0.55 + inPath * 0.4)
+      opacity = Math.max(0.12, opacity)
+    }
+    setSpectatorOpacity(person, opacity)
+  }
 }
 
 export function playSpectatorAnim(person, clipName, timeScale = 1) {
@@ -389,31 +442,39 @@ export function resetCrowdIdle(group) {
   })
 }
 
-/** Público en lados + atrás — todos animados desde el inicio. */
-export async function createCrowd(count = 14) {
+/** Público alrededor del ring (lados + frente + atrás). */
+export async function createCrowd(count = 16) {
   const group = new THREE.Group()
   group.name = 'crowd'
   const colors = [0x4a5568, 0x2d3748, 0x718096, 0x5a4a6a, 0x3d5a5b, 0x6b4f4f, 0x455a64, 0x556677]
-  // Variedad: nadie quieto
   const homeClips = ['clapping', 'arguing', 'cheering', 'idle', 'clapping', 'rallying', 'arguing', 'cheering']
 
+  // Dos anillos completos alrededor de ellos
+  const rings = [
+    { radius: 4.4, n: Math.ceil(count * 0.55) },
+    { radius: 5.35, n: Math.floor(count * 0.45) },
+  ]
+
   const slots = []
-  for (let i = 0; i < count * 3 && slots.length < count; i++) {
-    const a = (i / (count * 3)) * Math.PI * 2 + 0.08
-    if (Math.sin(a) > 0.55) continue
-    slots.push(a)
+  for (const ring of rings) {
+    for (let i = 0; i < ring.n; i++) {
+      const a = (i / ring.n) * Math.PI * 2 + ring.radius * 0.05 + (Math.random() - 0.5) * 0.08
+      slots.push({
+        a,
+        r: ring.radius + (Math.random() - 0.5) * 0.25,
+      })
+    }
   }
 
   const people = await Promise.all(
-    slots.map(async (angle, i) => {
-      const radius = 4.5 + (i % 3) * 0.5 + Math.random() * 0.25
+    slots.map(async ({ a, r }, i) => {
       const person = await createSpectator({
         color: colors[i % colors.length],
         height: 1.6 + Math.random() * 0.35,
         timeScale: 0.9 + Math.random() * 0.35,
         homeClip: homeClips[i % homeClips.length],
       })
-      person.position.set(Math.cos(angle) * radius, 0, Math.sin(angle) * radius)
+      person.position.set(Math.cos(a) * r, 0, Math.sin(a) * r)
       person.lookAt(0, 1.0, 0)
       person.userData.bobPhase = Math.random() * Math.PI * 2
       return person

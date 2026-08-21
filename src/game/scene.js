@@ -7,6 +7,7 @@ import {
   updateSpectator,
   setCrowdReaction,
   resetCrowdIdle,
+  updateCrowdOcclusion,
 } from './characters.js'
 
 /**
@@ -176,7 +177,7 @@ export async function createBattleScene(canvas) {
     const loaded = await Promise.all([
       createFighter({ color: 0x4cc9f0, name: 'player' }),
       createFighter({ color: 0xf72585, name: 'rival' }),
-      createCrowd(14),
+      createCrowd(16),
     ])
     player = loaded[0]
     rival = loaded[1]
@@ -450,6 +451,9 @@ export async function createBattleScene(canvas) {
     camera.position.x += (Math.random() - 0.5) * shake
     camera.position.y += (Math.random() - 0.5) * shake * 0.5
     camera.lookAt(look)
+
+    // NPCs delante de la cámara → transparentes para no tapar la pelea
+    updateCrowdOcclusion(crowdGroup, camera, look)
 
     renderer.render(scene, camera)
     requestAnimationFrame(frame)
