@@ -14,14 +14,17 @@ import {
  * Escena fija estilo Pokémon: dos fighters 3D con animaciones Mixamo.
  */
 export async function createBattleScene(canvas) {
+  const isMobile = window.matchMedia('(max-width: 900px), (pointer: coarse)').matches
   const renderer = new THREE.WebGLRenderer({
     canvas,
-    antialias: true,
+    antialias: !isMobile,
     alpha: true,
+    powerPreference: 'high-performance',
   })
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isMobile ? 1.25 : 1.5))
   renderer.setSize(canvas.clientWidth, canvas.clientHeight, false)
-  renderer.shadowMap.enabled = true
+  // Sombras solo en desktop; en móvil cuestan demasiado
+  renderer.shadowMap.enabled = !isMobile
 
   const scene = new THREE.Scene()
   scene.fog = new THREE.Fog(0x0b1220, 14, 32)
@@ -37,11 +40,16 @@ export async function createBattleScene(canvas) {
   camera.position.set(0, 3.85, 10.2)
   camera.lookAt(0, 0.95, -0.4)
 
-  scene.add(new THREE.HemisphereLight(0xb8c7ff, 0x1a1520, 1.1))
+  scene.add(new THREE.HemisphereLight(0xb8c7ff, 0x1a1520, 1.15))
 
   const key = new THREE.DirectionalLight(0xffffff, 1.35)
   key.position.set(4, 8, 5)
-  key.castShadow = true
+  key.castShadow = !isMobile
+  if (!isMobile) {
+    key.shadow.mapSize.set(1024, 1024)
+    key.shadow.camera.near = 1
+    key.shadow.camera.far = 24
+  }
   scene.add(key)
 
   const rim = new THREE.DirectionalLight(0x4cc9f0, 0.55)
@@ -52,29 +60,25 @@ export async function createBattleScene(canvas) {
   scene.add(rivalRim)
 
   const ground = new THREE.Mesh(
-    new THREE.CircleGeometry(11, 48),
-    new THREE.MeshStandardMaterial({ color: 0x1c2438, roughness: 0.9 }),
+    new THREE.CircleGeometry(11, isMobile ? 24 : 32),
+    new THREE.MeshLambertMaterial({ color: 0x1c2438 }),
   )
   ground.rotation.x = -Math.PI / 2
-  ground.receiveShadow = true
+  ground.receiveShadow = !isMobile
   scene.add(ground)
 
   // Plaza / ring de baile (el círculo = zona de combate, como el campo)
   const plazaFill = new THREE.Mesh(
-    new THREE.CircleGeometry(2.35, 64),
-    new THREE.MeshStandardMaterial({
-      color: 0x243044,
-      roughness: 0.75,
-      metalness: 0.05,
-    }),
+    new THREE.CircleGeometry(2.35, isMobile ? 32 : 48),
+    new THREE.MeshLambertMaterial({ color: 0x243044 }),
   )
   plazaFill.rotation.x = -Math.PI / 2
   plazaFill.position.y = 0.005
-  plazaFill.receiveShadow = true
+  plazaFill.receiveShadow = !isMobile
   scene.add(plazaFill)
 
   const court = new THREE.Mesh(
-    new THREE.RingGeometry(2.25, 2.55, 64),
+    new THREE.RingGeometry(2.25, 2.55, isMobile ? 32 : 48),
     new THREE.MeshBasicMaterial({ color: 0xffd166, transparent: true, opacity: 0.75 }),
   )
   court.rotation.x = -Math.PI / 2
@@ -82,7 +86,7 @@ export async function createBattleScene(canvas) {
   scene.add(court)
 
   const courtInner = new THREE.Mesh(
-    new THREE.RingGeometry(0.9, 1.0, 48),
+    new THREE.RingGeometry(0.9, 1.0, 32),
     new THREE.MeshBasicMaterial({ color: 0x4cc9f0, transparent: true, opacity: 0.35 }),
   )
   courtInner.rotation.x = -Math.PI / 2
@@ -100,7 +104,7 @@ export async function createBattleScene(canvas) {
 
   // Marcador de quién ataca (bajo los pies)
   const attackMark = new THREE.Mesh(
-    new THREE.RingGeometry(0.55, 0.78, 40),
+    new THREE.RingGeometry(0.55, 0.78, 24),
     new THREE.MeshBasicMaterial({
       color: 0x4cc9f0,
       transparent: true,
@@ -175,9 +179,9 @@ export async function createBattleScene(canvas) {
   // Cargar modelos (1 sola vez compartida)
   try {
     const loaded = await Promise.all([
-      createFighter({ color: 0x4cc9f0, name: 'player' }),
-      createFighter({ color: 0xf72585, name: 'rival' }),
-      createCrowd(16),
+      createFighter({ color: 0x4cc9f0, name: 'player', gender: 'male' }),
+      createFighter({ color: 0xf72585, name: 'rival', gender: 'female' }),
+      createCrowd(isMobile ? 8 : 10),
     ])
     player = loaded[0]
     rival = loaded[1]
@@ -321,6 +325,8 @@ export async function createBattleScene(canvas) {
     }
   }
 
+  let crowdOccTick = 0
+
   function frame() {
     if (!running) return
     const dt = Math.min(clock.getDelta(), 0.05)
@@ -452,8 +458,10 @@ export async function createBattleScene(canvas) {
     camera.position.y += (Math.random() - 0.5) * shake * 0.5
     camera.lookAt(look)
 
-    // NPCs delante de la cámara → transparentes para no tapar la pelea
-    updateCrowdOcclusion(crowdGroup, camera, look)
+    // NPCs delante de la cámara → se ocultan (cada 3 frames)
+    if (++crowdOccTick % 3 === 0) {
+      updateCrowdOcclusion(crowdGroup, camera, look)
+    }
 
     renderer.render(scene, camera)
     requestAnimationFrame(frame)

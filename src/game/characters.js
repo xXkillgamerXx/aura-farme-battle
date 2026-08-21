@@ -28,7 +28,6 @@ const POSE_TO_ANIM = {
 }
 
 const FIGHTER_CLIP_KEYS = ['idle', 'step', 'wave', 'chicken']
-const CROWD_CLIP_KEYS = ['idle', 'clapping', 'cheering', 'rallying', 'arguing']
 
 let shared = null
 let sharedPromise = null
@@ -37,6 +36,14 @@ function pickClip(fbx) {
   const list = fbx?.animations || []
   const good = list.find((a) => a.tracks && a.tracks.length > 0)
   return good ? good.clone() : null
+}
+
+/** Quita tracks de scale (suelen romper el mesh). */
+function sanitizeClip(clip) {
+  if (!clip) return null
+  const out = clip.clone()
+  out.tracks = out.tracks.filter((track) => !track.name.includes('.scale'))
+  return out
 }
 
 async function loadShared() {
@@ -60,19 +67,19 @@ async function loadShared() {
       byKey[key] = loaded[i]
     })
 
+    // Un solo cuerpo compatible: el de idle.fbx (mismas animaciones = sin deformar)
     const base = byKey.idle
     if (!base) throw new Error('No se pudo cargar idle.fbx')
 
     const clips = {}
     for (const key of Object.keys(ANIM_URLS)) {
-      const src = byKey[key]
-      if (!src) {
+      const raw = pickClip(byKey[key])
+      if (!raw) {
         clips[key] = null
         continue
       }
-      const clip = pickClip(src)
-      if (clip) clip.name = key
-      clips[key] = clip
+      raw.name = key
+      clips[key] = sanitizeClip(raw)
     }
 
     console.info(
@@ -92,7 +99,7 @@ async function loadShared() {
   }
 }
 
-function tintModel(model, color) {
+function tintModel(model, color, { cheap = false } = {}) {
   const tint = new THREE.Color(color)
   const mats = []
   model.traverse((child) => {
@@ -102,49 +109,59 @@ function tintModel(model, color) {
       child.visible = false
       return
     }
-    child.castShadow = true
-    child.receiveShadow = true
-    child.frustumCulled = false
-    const src = Array.isArray(child.material) ? child.material : [child.material]
-    const cloned = src.map((m) => {
-      const mat = new THREE.MeshStandardMaterial({
-        color: m.color ? m.color.clone().lerp(tint, 0.5) : tint.clone(),
-        map: m.map || null,
-        roughness: 0.55,
-        metalness: 0.08,
-        transparent: true,
-        opacity: 1,
-        depthWrite: true,
-      })
-      mats.push(mat)
-      return mat
+    child.castShadow = !cheap
+    child.receiveShadow = false
+    child.frustumCulled = true
+    // Siempre Standard (skinning seguro). En crowd: sin mapas = más barato.
+    const mat = new THREE.MeshStandardMaterial({
+      color: tint.clone(),
+      roughness: cheap ? 0.85 : 0.55,
+      metalness: 0.08,
     })
-    child.material = cloned.length === 1 ? cloned[0] : cloned
+    if (!cheap) {
+      const src = Array.isArray(child.material) ? child.material[0] : child.material
+      if (src?.color) mat.color.copy(src.color).lerp(tint, 0.5)
+      if (src?.map) mat.map = src.map
+    } else {
+      mat.color.multiplyScalar(0.85)
+    }
+    child.material = mat
+    mats.push(mat)
   })
   return mats
 }
 
-function fitModel(model, targetHeight = 2.05) {
+function fitModel(model, targetHeight = 2.05, { male = false } = {}) {
   model.updateMatrixWorld(true)
   const box = new THREE.Box3().setFromObject(model)
   const size = box.getSize(new THREE.Vector3())
   if (size.y < 0.001) {
-    // Mixamo suele venir en cm (~180); fallback
     model.scale.setScalar(0.012)
     return
   }
   const s = targetHeight / size.y
-  model.scale.setScalar(s)
+  // Hombre: un poco más alto y ancho (mismo mesh, sin retarget roto)
+  if (male) {
+    model.scale.set(s * 1.1, s * 1.04, s * 1.1)
+  } else {
+    model.scale.setScalar(s)
+  }
   model.updateMatrixWorld(true)
   const fitted = new THREE.Box3().setFromObject(model)
   model.position.y = -fitted.min.y
 }
 
 /**
- * Fighter 3D (Mixamo) con animaciones de baile.
+ * Fighter 3D (Mixamo).
+ * gender solo cambia proporción/tinte — mismo mesh que las animaciones (no se deforma).
  */
-export async function createFighter({ color = 0x4cc9f0, name = 'player' } = {}) {
+export async function createFighter({
+  color = 0x4cc9f0,
+  name = 'player',
+  gender = 'male',
+} = {}) {
   const { base, clips } = await loadShared()
+  const male = gender === 'male'
 
   const root = new THREE.Group()
   root.name = name
@@ -152,10 +169,9 @@ export async function createFighter({ color = 0x4cc9f0, name = 'player' } = {}) 
   const model = cloneSkeleton(base)
   model.animations = []
   tintModel(model, color)
-  fitModel(model)
+  fitModel(model, male ? 2.15 : 2.0, { male })
   root.add(model)
 
-  // Hips de Mixamo (para anular root motion horizontal)
   let hips = null
   model.traverse((c) => {
     if (hips) return
@@ -167,7 +183,7 @@ export async function createFighter({ color = 0x4cc9f0, name = 'player' } = {}) 
     : null
 
   const aura = new THREE.Mesh(
-    new THREE.SphereGeometry(1.15, 24, 16),
+    new THREE.SphereGeometry(1.15, 16, 12),
     new THREE.MeshBasicMaterial({
       color,
       transparent: true,
@@ -180,7 +196,7 @@ export async function createFighter({ color = 0x4cc9f0, name = 'player' } = {}) 
   root.add(aura)
 
   const ring = new THREE.Mesh(
-    new THREE.RingGeometry(0.55, 0.72, 32),
+    new THREE.RingGeometry(0.55, 0.72, 24),
     new THREE.MeshBasicMaterial({
       color,
       transparent: true,
@@ -217,6 +233,7 @@ export async function createFighter({ color = 0x4cc9f0, name = 'player' } = {}) 
     pose: 'idle',
     poseT: 0,
     intensity: 1,
+    gender,
     facing: name === 'player' ? Math.PI / 2 : -Math.PI / 2,
   }
 
@@ -260,7 +277,6 @@ export function updateFighter(fighter, dt, time) {
   u.poseT += dt
   u.mixer?.update(dt)
 
-  // Anclar al suelo: sin root motion horizontal (Y libre = se ve el baile)
   if (u.hips && u.hipsHome) {
     u.hips.position.x = u.hipsHome.x
     u.hips.position.z = u.hipsHome.z
@@ -274,7 +290,6 @@ export function updateFighter(fighter, dt, time) {
   fighter.rotation.y = u.facing ?? 0
 }
 
-
 /**
  * Espectador del público — siempre con animación en loop (no parado).
  */
@@ -283,15 +298,17 @@ export async function createSpectator({
   height = 1.7,
   timeScale = 1,
   homeClip = 'idle',
+  gender = 'female',
 } = {}) {
   const { base, clips } = await loadShared()
+  const male = gender === 'male'
   const root = new THREE.Group()
   root.name = 'spectator'
 
   const model = cloneSkeleton(base)
   model.animations = []
-  const mats = tintModel(model, color)
-  fitModel(model, height)
+  const mats = tintModel(model, color, { cheap: true })
+  fitModel(model, height, { male })
   root.add(model)
 
   let hips = null
@@ -306,17 +323,19 @@ export async function createSpectator({
 
   const mixer = new THREE.AnimationMixer(model)
   const actions = {}
-  for (const key of CROWD_CLIP_KEYS) {
+  const ensureAction = (key) => {
+    if (actions[key]) return actions[key]
     const clip = clips[key]
-    if (!clip) continue
+    if (!clip) return null
     const action = mixer.clipAction(clip)
     action.enabled = true
     action.setLoop(THREE.LoopRepeat, Infinity)
     actions[key] = action
+    return action
   }
 
-  const home = actions[homeClip] ? homeClip : 'idle'
-  const start = actions[home] || actions.idle
+  const home = clips[homeClip] ? homeClip : 'idle'
+  const start = ensureAction(home) || ensureAction('idle')
   if (start) {
     start.setEffectiveTimeScale(timeScale)
     start.setEffectiveWeight(1)
@@ -330,26 +349,24 @@ export async function createSpectator({
     hips,
     hipsHome,
     actions,
+    ensureAction,
+    clips,
     currentAction: start || null,
     idleScale: timeScale,
     homeClip: home,
     mats,
     opacity: 1,
+    animAcc: Math.random(),
   }
   return root
 }
 
-/** Si el NPC tapa la cámara → pelea, se vuelve transparente. */
+/** Si el NPC tapa mucho la vista → se oculta. */
 export function setSpectatorOpacity(person, opacity) {
-  const o = Math.max(0.1, Math.min(1, opacity))
-  if (Math.abs((person.userData.opacity ?? 1) - o) < 0.02) return
-  person.userData.opacity = o
-  const mats = person.userData.mats || []
-  for (const m of mats) {
-    m.opacity = o
-    m.transparent = o < 0.98
-    m.depthWrite = o > 0.82
-  }
+  const blocking = opacity < 0.45
+  if (person.userData.blocking === blocking) return
+  person.userData.blocking = blocking
+  person.visible = !blocking
 }
 
 const _cam = new THREE.Vector3()
@@ -357,7 +374,6 @@ const _toFocus = new THREE.Vector3()
 const _toP = new THREE.Vector3()
 const _lat = new THREE.Vector3()
 
-/** Hace transparentes a los del público que quedan entre la cámara y el ring. */
 export function updateCrowdOcclusion(group, camera, focus) {
   if (!group?.children?.length) return
   camera.getWorldPosition(_cam)
@@ -373,12 +389,9 @@ export function updateCrowdOcclusion(group, camera, focus) {
     const lateral = _lat.length()
 
     let opacity = 1
-    // Entre cámara y pelea, cerca del eje de la vista
-    if (along > 0.6 && along < distF + 0.6 && lateral < 2.4) {
-      const nearAxis = 1 - lateral / 2.4
-      const inPath = 1 - Math.min(1, Math.abs(along / distF - 0.5) * 1.4)
-      opacity = 1 - nearAxis * (0.55 + inPath * 0.4)
-      opacity = Math.max(0.12, opacity)
+    if (along > 0.6 && along < distF + 0.6 && lateral < 2.1) {
+      const nearAxis = 1 - lateral / 2.1
+      opacity = 1 - nearAxis * 0.95
     }
     setSpectatorOpacity(person, opacity)
   }
@@ -386,7 +399,7 @@ export function updateCrowdOcclusion(group, camera, focus) {
 
 export function playSpectatorAnim(person, clipName, timeScale = 1) {
   const u = person.userData
-  const next = u.actions?.[clipName]
+  const next = u.ensureAction?.(clipName) || u.actions?.[clipName]
   if (!next) return
 
   if (u.currentAction === next) {
@@ -408,8 +421,13 @@ export function playSpectatorAnim(person, clipName, timeScale = 1) {
 }
 
 export function updateSpectator(person, dt) {
+  if (!person.visible) return
   const u = person.userData
-  u.mixer?.update(dt)
+  u.animAcc = (u.animAcc || 0) + dt
+  if (u.animAcc < 1 / 28) return
+  const step = u.animAcc
+  u.animAcc = 0
+  u.mixer?.update(step)
   if (u.hips && u.hipsHome) {
     u.hips.position.x = u.hipsHome.x
     u.hips.position.z = u.hipsHome.z
@@ -417,7 +435,6 @@ export function updateSpectator(person, dt) {
   person.position.y = 0
 }
 
-/** cheer = todos felicitan · boo = todos abuchean · meh = todos murmuran */
 export function setCrowdReaction(group, kind = 'cheer') {
   let clips
   if (kind === 'cheer') clips = ['cheering', 'clapping', 'rallying']
@@ -434,7 +451,6 @@ export function setCrowdReaction(group, kind = 'cheer') {
   })
 }
 
-/** Vuelve cada uno a SU animación de espera (siempre en movimiento). */
 export function resetCrowdIdle(group) {
   group.children.forEach((person) => {
     const home = person.userData.homeClip || 'clapping'
@@ -442,14 +458,13 @@ export function resetCrowdIdle(group) {
   })
 }
 
-/** Público alrededor del ring (lados + frente + atrás). */
-export async function createCrowd(count = 16) {
+/** Público alrededor del ring. */
+export async function createCrowd(count = 10) {
   const group = new THREE.Group()
   group.name = 'crowd'
   const colors = [0x4a5568, 0x2d3748, 0x718096, 0x5a4a6a, 0x3d5a5b, 0x6b4f4f, 0x455a64, 0x556677]
   const homeClips = ['clapping', 'arguing', 'cheering', 'idle', 'clapping', 'rallying', 'arguing', 'cheering']
 
-  // Dos anillos completos alrededor de ellos
   const rings = [
     { radius: 4.4, n: Math.ceil(count * 0.55) },
     { radius: 5.35, n: Math.floor(count * 0.45) },
@@ -468,11 +483,13 @@ export async function createCrowd(count = 16) {
 
   const people = await Promise.all(
     slots.map(async ({ a, r }, i) => {
+      const male = i % 2 === 0
       const person = await createSpectator({
         color: colors[i % colors.length],
-        height: 1.6 + Math.random() * 0.35,
+        height: (male ? 1.72 : 1.58) + Math.random() * 0.28,
         timeScale: 0.9 + Math.random() * 0.35,
         homeClip: homeClips[i % homeClips.length],
+        gender: male ? 'male' : 'female',
       })
       person.position.set(Math.cos(a) * r, 0, Math.sin(a) * r)
       person.lookAt(0, 1.0, 0)
