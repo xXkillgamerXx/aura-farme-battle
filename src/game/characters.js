@@ -46,28 +46,52 @@ function sanitizeClip(clip) {
   return out
 }
 
-async function loadShared() {
-  if (shared) return shared
-  if (sharedPromise) return sharedPromise
+const ASSET_LABELS = {
+  idle: 'Pose idle',
+  step: 'Step Hip Hop',
+  wave: 'Wave Hip Hop',
+  chicken: 'Chicken Dance',
+  clapping: 'Público · aplausos',
+  cheering: 'Público · ovación',
+  rallying: 'Público · ánimo',
+  arguing: 'Público · abucheo',
+}
+
+/**
+ * Precarga FBX con progreso (0–1). Idempotente: si ya está, resuelve al instante.
+ */
+export async function preloadAssets(onProgress) {
+  if (shared) {
+    onProgress?.(1, 'Listo')
+    return shared
+  }
+  if (sharedPromise) {
+    const result = await sharedPromise
+    onProgress?.(1, 'Listo')
+    return result
+  }
 
   sharedPromise = (async () => {
     const loader = new FBXLoader()
     const entries = Object.entries(ANIM_URLS)
-    const loaded = await Promise.all(
-      entries.map(([, url]) =>
-        loader.loadAsync(url).catch((err) => {
-          console.error('[aura] FBX fail', url, err)
-          return null
-        }),
-      ),
-    )
-
     const byKey = {}
-    entries.forEach(([key], i) => {
-      byKey[key] = loaded[i]
-    })
+    let done = 0
+    const total = entries.length
 
-    // Un solo cuerpo compatible: el de idle.fbx (mismas animaciones = sin deformar)
+    onProgress?.(0, 'Preparando assets…')
+
+    for (const [key, url] of entries) {
+      onProgress?.(done / total, ASSET_LABELS[key] || key)
+      try {
+        byKey[key] = await loader.loadAsync(url)
+      } catch (err) {
+        console.error('[aura] FBX fail', url, err)
+        byKey[key] = null
+      }
+      done += 1
+      onProgress?.(done / total, ASSET_LABELS[key] || key)
+    }
+
     const base = byKey.idle
     if (!base) throw new Error('No se pudo cargar idle.fbx')
 
@@ -88,6 +112,7 @@ async function loadShared() {
     )
 
     shared = { base, clips }
+    onProgress?.(1, 'Listo')
     return shared
   })()
 
@@ -97,6 +122,10 @@ async function loadShared() {
     sharedPromise = null
     throw err
   }
+}
+
+async function loadShared() {
+  return preloadAssets()
 }
 
 function tintModel(model, color, { cheap = false } = {}) {

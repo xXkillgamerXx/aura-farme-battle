@@ -8,7 +8,9 @@ import AuraFloats from './components/AuraFloats.vue'
 import CrowdReact from './components/CrowdReact.vue'
 import RunMap from './components/RunMap.vue'
 import UpgradePick from './components/UpgradePick.vue'
+import LoadingScreen from './components/LoadingScreen.vue'
 import { MOVES } from './game/moves.js'
+import { preloadAssets } from './game/characters.js'
 import {
   createRun,
   getRivalForFloor,
@@ -24,8 +26,12 @@ import {
   WIN_LINE,
 } from './game/battle.js'
 
-/** screen: menu | map | battle | upgrade | runWin */
-const screen = ref('menu')
+/** screen: loading | menu | map | battle | upgrade | runWin */
+const screen = ref('loading')
+const loadProgress = ref(0)
+const loadLabel = ref('Preparando…')
+const loadError = ref('')
+const assetsReady = ref(false)
 const run = reactive(createRun())
 const battle = reactive(createBattle(getRivalForFloor(0), run))
 const fx = ref(null)
@@ -38,6 +44,27 @@ const crowdEvent = ref(null)
 const spaceDown = ref(false)
 let showTimer = null
 const SHOW_MS = 2800
+
+async function bootLoad() {
+  loadError.value = ''
+  loadProgress.value = 0
+  loadLabel.value = 'Preparando…'
+  screen.value = 'loading'
+  assetsReady.value = false
+  try {
+    await preloadAssets((p, label) => {
+      loadProgress.value = p
+      loadLabel.value = label || 'Cargando…'
+    })
+    assetsReady.value = true
+    loadProgress.value = 1
+    loadLabel.value = 'Listo'
+    screen.value = 'menu'
+  } catch (err) {
+    console.error('[aura] boot', err)
+    loadError.value = err?.message || 'No se pudieron cargar los assets'
+  }
+}
 
 function clearShowTimer() {
   if (showTimer != null) {
@@ -294,6 +321,7 @@ function onContinue() {
 }
 
 function handleSpace() {
+  if (screen.value === 'loading') return
   if (screen.value === 'menu' || screen.value === 'map' || screen.value === 'upgrade') return
   if (screen.value === 'runWin') {
     resetRun()
@@ -354,6 +382,7 @@ function onKeyUp(e) {
 }
 
 onMounted(() => {
+  bootLoad()
   window.addEventListener('keydown', onKeyDown)
   window.addEventListener('keyup', onKeyUp)
 })
@@ -388,7 +417,16 @@ watch(
 
 <template>
   <div class="app">
+    <LoadingScreen
+      v-if="screen === 'loading' || loadError"
+      :progress="loadProgress"
+      :label="loadLabel"
+      :error="loadError"
+      @retry="bootLoad"
+    />
+
     <AuraScene
+      v-if="assetsReady"
       ref="sceneRef"
       class="canvas-wrap"
       :crowd="55"
@@ -397,8 +435,8 @@ watch(
       :input="{ x: 0, z: 0 }"
     />
 
-    <AuraFloats :event="floatEvent" />
-    <CrowdReact :event="crowdEvent" />
+    <AuraFloats v-if="assetsReady" :event="floatEvent" />
+    <CrowdReact v-if="assetsReady" :event="crowdEvent" />
 
     <MainMenu
       v-if="screen === 'menu'"
