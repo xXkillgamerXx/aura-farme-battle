@@ -4,8 +4,8 @@ import { onMounted, onBeforeUnmount, ref } from 'vue'
 const emit = defineEmits(['start', 'howto'])
 
 const items = [
-  { id: 'start', label: 'Empezar batalla', hint: 'Entra a la plaza' },
-  { id: 'howto', label: 'Cómo se juega', hint: 'Controles y reglas' },
+  { id: 'start', label: 'Entrar a Aura Place', hint: 'Mapa con varios caminos' },
+  { id: 'howto', label: 'Cómo se juega', hint: 'Peleas, tienda y cofres' },
 ]
 
 const selected = ref(0)
@@ -48,9 +48,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   <div class="menu">
     <div class="glow" />
     <div class="card">
-      <p class="eyebrow">Farmeo de Aura · Plaza Battle</p>
+      <p class="eyebrow">Roblox Aura Place</p>
       <h1 class="display">AURA<br />BATTLE</h1>
-      <p class="tagline">No pelees. Impón. El crowd decide.</p>
+      <p class="tagline">Elige tu camino. Compra. Mejora. Domina la plaza.</p>
 
       <nav class="nav">
         <button
@@ -73,17 +73,17 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       <div class="keys">
         <div class="desk"><kbd>clic</kbd> elegir · <kbd>doble clic</kbd> / <kbd>SPACE</kbd> entrar</div>
         <div class="mob">Toca para elegir · toca otra vez para entrar</div>
-        <div>Mapa roguelite · mejoras · 5 peleas</div>
+        <div>Mapa multi-path · tienda · cofres · boss</div>
       </div>
 
       <div v-if="showHowto" class="howto">
         <h2>Cómo se juega</h2>
         <ol>
-          <li>Mapa: entra a la pelea actual.</li>
-          <li>Clic elige habilidad · doble clic (o SPACE) la usa.</li>
-          <li>Barra: ICÓNICO = más daño (a veces x2).</li>
-          <li>Si ganas: “SOY EL MÁS PERRÓN” y eliges mejora.</li>
-          <li>AURA se llena si bailas bien. CRINGE si fallas — CRINGE lleno = PERDISTE.</li>
+          <li>Mapa Roblox: varios caminos (pelea, tienda, cofre, lobby).</li>
+          <li>Ganas 🪙 en peleas y compras mejoras/bailes en la tienda.</li>
+          <li>Cofres dan recompensas gratis; el lobby te cura un poco.</li>
+          <li>En pelea: clic elige baile · doble clic / SPACE lo usa.</li>
+          <li>AURA llena = ganas. CRINGE lleno = pierdes. Llega al BOSS.</li>
         </ol>
         <p class="close-hint">ESC o SPACE para cerrar</p>
       </div>

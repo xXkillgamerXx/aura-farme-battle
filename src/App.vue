@@ -9,13 +9,23 @@ import CrowdReact from './components/CrowdReact.vue'
 import RunMap from './components/RunMap.vue'
 import UpgradePick from './components/UpgradePick.vue'
 import LoadingScreen from './components/LoadingScreen.vue'
+import ShopScreen from './components/ShopScreen.vue'
 import { MOVES } from './game/moves.js'
 import { preloadAssets } from './game/characters.js'
 import {
   createRun,
-  getRivalForFloor,
-  pickUpgradeChoices,
-  applyUpgrade,
+  getRivalForNode,
+  getCurrentNode,
+  pickRewardChoices,
+  applyReward,
+  getOwnedMoves,
+  getMoveSlots,
+  selectMapNode,
+  completeCurrentNode,
+  getShopCatalog,
+  buyShopItem,
+  applyRest,
+  coinsForNode,
 } from './game/run.js'
 import {
   createBattle,
@@ -26,20 +36,21 @@ import {
   WIN_LINE,
 } from './game/battle.js'
 
-/** screen: loading | menu | map | battle | upgrade | runWin */
+/** screen: loading | menu | map | battle | upgrade | shop | runWin */
 const screen = ref('loading')
 const loadProgress = ref(0)
 const loadLabel = ref('Preparando…')
 const loadError = ref('')
 const assetsReady = ref(false)
 const run = reactive(createRun())
-const battle = reactive(createBattle(getRivalForFloor(0), run))
+const battle = reactive(createBattle(getRivalForNode(getCurrentNode(run)), run))
 const fx = ref(null)
 const floatEvent = ref(null)
 const timingRef = ref(null)
 const sceneRef = ref(null)
 const moveIndex = ref(0)
 const upgradeChoices = ref([])
+const shopItems = ref([])
 const crowdEvent = ref(null)
 const spaceDown = ref(false)
 let showTimer = null
@@ -82,7 +93,9 @@ function scheduleAutoContinue() {
 }
 
 const inBattle = computed(() => screen.value === 'battle')
-const selectedMove = computed(() => MOVES[moveIndex.value])
+const ownedMoves = computed(() => getOwnedMoves(run))
+const moveSlots = computed(() => getMoveSlots(run))
+const selectedMove = computed(() => ownedMoves.value[moveIndex.value] || ownedMoves.value[0] || MOVES[0])
 
 function bumpFx(payload) {
   fx.value = { ...payload, t: Date.now() }
@@ -109,8 +122,8 @@ function goMap() {
   screen.value = 'map'
 }
 
-function startFight() {
-  const rival = getRivalForFloor(run.floor)
+function startFightFromNode(node) {
+  const rival = getRivalForNode(node)
   Object.assign(battle, createBattle(rival, run))
   run.healAfter = false
   moveIndex.value = 0
@@ -118,19 +131,81 @@ function startFight() {
   bumpFx({ type: 'resetAll' })
 }
 
+/** Entrar a un pad del mapa (pelea / tienda / cofre / lobby) */
+function onMapEnter(nodeId) {
+  Object.assign(run, selectMapNode(run, nodeId))
+  const node = getCurrentNode(run)
+  if (!node) return
+
+  if (node.type === 'fight' || node.type === 'elite' || node.type === 'boss') {
+    startFightFromNode(node)
+    return
+  }
+  if (node.type === 'shop') {
+    shopItems.value = getShopCatalog(run)
+    screen.value = 'shop'
+    return
+  }
+  if (node.type === 'reward') {
+    upgradeChoices.value = pickRewardChoices(run, 3)
+    screen.value = 'upgrade'
+    return
+  }
+  if (node.type === 'rest') {
+    Object.assign(run, applyRest(run))
+    Object.assign(run, completeCurrentNode(run, { coinsGain: 0 }))
+    goMap()
+  }
+}
+
+function onShopBuy(id) {
+  const before = run.coins
+  Object.assign(run, buyShopItem(run, id))
+  shopItems.value = getShopCatalog(run)
+  // Si no cambió el saldo, la compra falló (ya lo tenías / sin coins)
+  if (run.coins === before) return
+}
+
+function onShopLeave() {
+  Object.assign(run, completeCurrentNode(run, { coinsGain: 0 }))
+  goMap()
+}
+
+function onWinFlow() {
+  const node = getCurrentNode(run)
+  const coins = coinsForNode(node)
+  Object.assign(run, completeCurrentNode(run, { coinsGain: coins }))
+
+  if (node?.type === 'boss' || (run.map?.available?.length || 0) === 0) {
+    run.wonRun = true
+    screen.value = 'runWin'
+    return
+  }
+  goMap()
+}
+
+function onUpgradePick(id) {
+  Object.assign(run, applyReward(run, id))
+  Object.assign(run, completeCurrentNode(run, { coinsGain: 4 + (getCurrentNode(run)?.layer || 0) * 2 }))
+  moveIndex.value = Math.min(moveIndex.value, Math.max(0, ownedMoves.value.length - 1))
+  goMap()
+}
+
 function onSelectMove(i) {
   if (battle.phase !== 'pick') return
-  const idx = ((i % MOVES.length) + MOVES.length) % MOVES.length
+  const list = ownedMoves.value
+  if (!list.length) return
+  const idx = ((i % list.length) + list.length) % list.length
   moveIndex.value = idx
   battle.moveIndex = idx
-  battle.message = `${MOVES[idx].name} · doble clic / SPACE para bailar`
+  battle.message = `${list[idx].name} · doble clic / SPACE para bailar`
 }
 
 function startAbility() {
   if (battle.phase !== 'pick') return
-  const move = MOVES[moveIndex.value]
+  const move = ownedMoves.value[moveIndex.value]
+  if (!move) return
   Object.assign(battle, pickMove(battle, move.id))
-  // preview camera for this dance
   bumpFx({ type: 'camera', mode: move.camera || 'side' })
   nextTick(() => timingRef.value?.start())
 }
@@ -220,7 +295,7 @@ function playRivalTurn() {
   bumpFx({ type: 'reset' })
   battle.message = `${battle.rival.name} ataca…`
 
-  const next = resolveRivalAttack(battle)
+  const next = resolveRivalAttack(battle, run)
   Object.assign(battle, next)
   const result = next.lastResult
   if (!result || result.side !== 'rival') return
@@ -277,23 +352,6 @@ function playRivalTurn() {
   }, 450)
 }
 
-function onWinFlow() {
-  run.fame += 1
-  if (run.floor >= run.maxFloors - 1) {
-    run.wonRun = true
-    screen.value = 'runWin'
-    return
-  }
-  upgradeChoices.value = pickUpgradeChoices(3)
-  screen.value = 'upgrade'
-}
-
-function onUpgradePick(id) {
-  Object.assign(run, applyUpgrade(run, id))
-  run.floor += 1
-  goMap()
-}
-
 function onContinue() {
   clearShowTimer()
   if (battle.phase === 'matchEnd') {
@@ -322,7 +380,7 @@ function onContinue() {
 
 function handleSpace() {
   if (screen.value === 'loading') return
-  if (screen.value === 'menu' || screen.value === 'map' || screen.value === 'upgrade') return
+  if (screen.value === 'menu' || screen.value === 'map' || screen.value === 'upgrade' || screen.value === 'shop') return
   if (screen.value === 'runWin') {
     resetRun()
     goMap()
@@ -373,7 +431,8 @@ function onKeyDown(e) {
     onSelectMove(moveIndex.value + 3)
   } else if (/^[1-6]$/.test(e.key)) {
     e.preventDefault()
-    onSelectMove(Number(e.key) - 1)
+    const slot = Number(e.key) - 1
+    if (ownedMoves.value[slot]) onSelectMove(slot)
   }
 }
 
@@ -446,20 +505,28 @@ watch(
     <RunMap
       v-if="screen === 'map'"
       :run="run"
-      @fight="startFight"
+      @enter="onMapEnter"
       @menu="goMenu"
     />
 
     <UpgradePick
       v-if="screen === 'upgrade'"
       :choices="upgradeChoices"
-      :title="WIN_LINE"
+      :title="'COFRE · Elige recompensa'"
       @pick="onUpgradePick"
+    />
+
+    <ShopScreen
+      v-if="screen === 'shop'"
+      :items="shopItems"
+      :coins="run.coins || 0"
+      @buy="onShopBuy"
+      @leave="onShopLeave"
     />
 
     <div v-if="screen === 'runWin'" class="banner win">
       <h1>{{ WIN_LINE }}</h1>
-      <p>Completaste la ruta. Fame {{ run.fame }}</p>
+      <p>Completaste Aura Place. Fame {{ run.fame }} · 🪙 {{ run.coins }}</p>
       <button type="button" @click="() => { resetRun(); goMap() }">Nueva ruta <kbd>SPACE</kbd></button>
     </div>
 
@@ -483,8 +550,11 @@ watch(
         :rival-name="battle.rival.name"
         :last-result="battle.lastResult"
         :move-index="moveIndex"
+        :move-slots="moveSlots"
+        :owned-count="ownedMoves.length"
+        :max-slots="6"
         :outcome="battle.outcome"
-        :floor="run.floor + 1"
+        :floor="(getCurrentNode(run)?.layer ?? 0) + 1"
         :max-floors="run.maxFloors"
         :combo="battle.combo"
         @select-move="onSelectMove"

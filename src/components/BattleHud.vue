@@ -1,6 +1,6 @@
 <script setup>
 import { computed } from 'vue'
-import { MOVES, EFFECT_LABELS } from '../game/moves.js'
+import { EFFECT_LABELS } from '../game/moves.js'
 
 const props = defineProps({
   phase: String,
@@ -15,6 +15,9 @@ const props = defineProps({
   rivalName: String,
   lastResult: Object,
   moveIndex: { type: Number, default: 0 },
+  moveSlots: { type: Array, default: () => [] },
+  ownedCount: { type: Number, default: 3 },
+  maxSlots: { type: Number, default: 6 },
   outcome: String,
   floor: Number,
   maxFloors: Number,
@@ -28,8 +31,10 @@ const pCringe = computed(() => (props.playerCringe / props.cringeMax) * 100)
 const rAura = computed(() => (props.rivalAura / props.auraMax) * 100)
 const rCringe = computed(() => (props.rivalCringe / props.cringeMax) * 100)
 
-/** Clic = elegir · segundo clic / doble clic = usar */
+/** Clic = elegir · segundo clic / doble clic = usar (slots vacíos no cuentan) */
 function onMoveClick(i) {
+  const m = props.moveSlots[i]
+  if (!m) return
   if (props.moveIndex === i) emit('attack')
   else emit('select-move', i)
 }
@@ -53,7 +58,7 @@ const turnBanner = computed(() => {
           <h1>Aura Battle</h1>
         </div>
         <div class="score">
-          <span v-if="phase === 'pick'">Elige (clic)</span>
+          <span v-if="phase === 'pick'">Bailes {{ ownedCount }}/{{ maxSlots }}</span>
           <span v-else-if="phase === 'timing'">Ritmo</span>
           <span v-else-if="outcome === 'win'">Victoria</span>
           <span v-else-if="outcome === 'lose'">Derrota</span>
@@ -94,7 +99,7 @@ const turnBanner = computed(() => {
       </div>
 
       <p class="legend">
-        El círculo dorado es la <strong>plaza</strong> (ring de baile). Meta: 100 AURA · CRINGE 100 = pierdes
+        El círculo dorado es la <strong>plaza</strong>. Gana bailes tras cada pelea (máx {{ maxSlots }}).
       </p>
 
       <p class="message">{{ message }}</p>
@@ -113,26 +118,33 @@ const turnBanner = computed(() => {
     <div v-if="phase === 'pick'" class="attack-dock">
       <div class="moves">
         <button
-          v-for="(m, i) in MOVES"
-          :key="m.id"
+          v-for="(m, i) in moveSlots"
+          :key="m?.id || `empty-${i}`"
           type="button"
           class="move"
-          :class="{ on: i === moveIndex }"
-          :style="{ '--c': m.color }"
+          :class="{ on: !!m && i === moveIndex, empty: !m }"
+          :style="m ? { '--c': m.color } : undefined"
+          :disabled="!m"
           @click="onMoveClick(i)"
         >
-          <div class="move-top">
-            <strong>{{ m.name }}</strong>
-            <kbd>{{ i + 1 }}</kbd>
+          <template v-if="m">
+            <div class="move-top">
+              <strong>{{ m.name }}</strong>
+              <kbd>{{ i + 1 }}</kbd>
+            </div>
+            <small>
+              <span class="eff">{{ EFFECT_LABELS[m.effect]?.short || m.tag }}</span>
+              · poder {{ m.power }}
+            </small>
+          </template>
+          <div v-else class="empty-label">
+            <span>Vacío</span>
+            <small>slot {{ i + 1 }}</small>
           </div>
-          <small>
-            <span class="eff">{{ EFFECT_LABELS[m.effect]?.short || m.tag }}</span>
-            · poder {{ m.power }}
-          </small>
         </button>
       </div>
       <div class="dock-footer">
-        <p class="hint">clic elige · doble clic usa</p>
+        <p class="hint">{{ ownedCount }}/{{ maxSlots }} · clic elige · doble clic usa</p>
         <button type="button" class="attack-btn" @click="$emit('attack')">
           USAR BAILE <kbd>SPACE</kbd>
         </button>
@@ -319,7 +331,7 @@ const turnBanner = computed(() => {
   bottom: 0.5rem;
   top: auto;
   transform: translateX(-50%);
-  width: min(480px, calc(100% - 1.5rem));
+  width: min(520px, calc(100% - 1.5rem));
   flex-shrink: 0;
   padding: 0.55rem;
   border-radius: 14px;
@@ -331,7 +343,7 @@ const turnBanner = computed(() => {
 }
 .moves {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.28rem;
   width: 100%;
 }
@@ -346,6 +358,33 @@ const turnBanner = computed(() => {
   gap: 0.05rem;
   min-width: 0;
   min-height: 0;
+}
+.move.empty {
+  border: 1px dashed rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.02);
+  cursor: default;
+  opacity: 0.65;
+}
+.move.empty:disabled {
+  cursor: default;
+}
+.empty-label {
+  display: grid;
+  gap: 0.1rem;
+  place-items: center;
+  text-align: center;
+  min-height: 2.2rem;
+  color: var(--muted);
+}
+.empty-label span {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.empty-label small {
+  font-size: 0.5rem;
+  text-transform: none;
 }
 .move.on {
   border-color: var(--c);

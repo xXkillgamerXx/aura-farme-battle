@@ -25,6 +25,8 @@ const POSE_TO_ANIM = {
   'boat-kid': { clip: 'chicken', timeScale: 1.15 },
   'no-look': { clip: 'wave', timeScale: 0.95 },
   cringe: { clip: 'chicken', timeScale: 1.7 },
+  'aura-guard': { clip: 'wave', timeScale: 0.55 },
+  'tank-pose': { clip: 'wave', timeScale: 0.45 },
 }
 
 const FIGHTER_CLIP_KEYS = ['idle', 'step', 'wave', 'chicken']

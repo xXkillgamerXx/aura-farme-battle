@@ -48,12 +48,15 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           :key="c.id"
           type="button"
           class="choice"
-          :class="{ on: selected === i }"
+          :class="{ on: selected === i, move: c.kind === 'move' }"
+          :style="c.color ? { '--c': c.color } : undefined"
           @mouseenter="selected = i"
           @click="onChoiceClick(i)"
         >
           <strong>{{ c.name }}</strong>
           <span>{{ c.desc }}</span>
+          <em v-if="c.kind === 'move'">BAILE NUEVO</em>
+          <em v-else-if="c.kind === 'upgrade'">MEJORA</em>
         </button>
       </div>
     </div>
@@ -107,8 +110,18 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   color: var(--muted);
   font-size: 0.85rem;
 }
+.choice em {
+  font-style: normal;
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  font-weight: 800;
+  color: var(--c, var(--accent));
+}
+.choice.move {
+  border-color: color-mix(in srgb, var(--c, #4cc9f0) 35%, transparent);
+}
 .choice.on {
-  border-color: rgba(255, 209, 102, 0.55);
-  background: rgba(255, 209, 102, 0.1);
+  border-color: color-mix(in srgb, var(--c, #ffd166) 70%, transparent);
+  background: color-mix(in srgb, var(--c, #ffd166) 14%, rgba(10, 16, 32, 0.9));
 }
 </style>
