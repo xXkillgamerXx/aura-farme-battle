@@ -126,7 +126,6 @@ export function createRun() {
     iconicBonus: 0,
     noSelfCringe: false,
     drainBonus: 0,
-    comboBonus: 0,
     armor: 0,
     thorns: 0,
     auraShield: 0,
@@ -248,8 +247,8 @@ export function pickRewardChoices(run, count = 3) {
   return out
 }
 
-/** Catálogo de tienda Roblox (precios en coins) */
-export function getShopCatalog(run) {
+/** Catálogo de tienda: 3 ítems aleatorios por visita */
+function buildShopPool(run) {
   const items = []
 
   getUnlockableMoves(run).forEach((m) => {
@@ -264,7 +263,6 @@ export function getShopCatalog(run) {
     })
   })
 
-  // Mejoras aún no tomadas (orden estable)
   UPGRADES.filter((u) => !(run.upgradesTaken || []).includes(u.id)).forEach((u) => {
     items.push({
       id: u.id,
@@ -288,6 +286,28 @@ export function getShopCatalog(run) {
   return items
 }
 
+function shufflePool(pool) {
+  const out = [...pool]
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[out[i], out[j]] = [out[j], out[i]]
+  }
+  return out
+}
+
+export function rollShopStock(run, count = 3) {
+  return shufflePool(buildShopPool(run)).slice(0, count)
+}
+
+/** Entrar a tienda: genera stock fijo de 3 ítems */
+export function enterShop(run) {
+  return { ...run, shopStock: rollShopStock(run, 3) }
+}
+
+export function getShopCatalog(run) {
+  return run.shopStock || []
+}
+
 function shopPriceForMove(m) {
   // Bailes: asequibles al inicio, más caros si son potentes
   return 20 + Math.round(m.power * 0.35)
@@ -297,8 +317,11 @@ function shopPriceForUpgrade(u) {
   return u.kind === 'defense' ? 18 : 22
 }
 
-/** Resuelve un ítem de tienda sin regenerar catálogo aleatorio */
+/** Resuelve un ítem de tienda desde el stock actual */
 export function resolveShopItem(run, itemId) {
+  const fromStock = (run.shopStock || []).find((i) => i.id === itemId)
+  if (fromStock) return fromStock
+
   if (itemId === 'coin-heal') {
     return {
       id: 'coin-heal',
@@ -348,12 +371,16 @@ export function buyShopItem(run, itemId) {
   if (item.kind === 'heal') {
     next.startAura = (next.startAura || 0) + 12
     next.healAfter = true
+    next.shopStock = (next.shopStock || []).filter((i) => i.id !== itemId)
     return next
   }
   if (item.kind === 'move') {
-    return unlockMove(next, item.moveId)
+    next = unlockMove(next, item.moveId)
+  } else if (item.kind === 'upgrade') {
+    next = applyUpgrade(next, itemId)
   }
-  return applyUpgrade(next, itemId)
+  next.shopStock = (next.shopStock || []).filter((i) => i.id !== itemId)
+  return next
 }
 
 export function applyRest(run) {

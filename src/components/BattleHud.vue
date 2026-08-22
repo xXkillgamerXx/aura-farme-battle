@@ -21,7 +21,6 @@ const props = defineProps({
   outcome: String,
   floor: Number,
   maxFloors: Number,
-  combo: { type: Object, default: null },
 })
 
 const emit = defineEmits(['select-move', 'attack', 'continue', 'restart'])
@@ -40,7 +39,6 @@ function onMoveClick(i) {
 }
 const turnBanner = computed(() => {
   if (props.phase === 'pick' || props.phase === 'timing') return { text: 'TU TURNO', side: 'you' }
-  if (props.phase === 'combo') return { text: `COMBO ${props.combo?.step || 1}/${props.combo?.max || 2}`, side: 'you' }
   if (props.phase === 'playerShow') return { text: 'TÚ BAILAS', side: 'you' }
   if (props.phase === 'rivalShow') return { text: 'TURNO RIVAL', side: 'rival' }
   if (props.outcome === 'win') return { text: 'VICTORIA', side: 'you' }
@@ -106,8 +104,7 @@ const turnBanner = computed(() => {
 
       <div v-if="lastResult && (phase === 'playerShow' || phase === 'rivalShow')" class="result">
         <span :style="{ color: lastResult.tier?.color }">{{ lastResult.tier?.label }}</span>
-        <span>{{ lastResult.move?.name }}</span>
-        <span v-if="lastResult.hits > 1" class="x2">x2</span>
+        <span v-if="lastResult.move?.name">{{ lastResult.move.name }}</span>
         <span v-if="lastResult.auraGain > 0" class="up">+{{ lastResult.auraGain }} aura</span>
         <span v-if="lastResult.auraLoss > 0" class="dmg">-{{ lastResult.auraLoss }} aura</span>
         <span v-if="lastResult.cringeGain > 0" class="dmg">+{{ lastResult.cringeGain }} cringe</span>
@@ -149,15 +146,6 @@ const turnBanner = computed(() => {
           USAR BAILE <kbd>SPACE</kbd>
         </button>
       </div>
-    </div>
-
-    <div
-      v-if="phase === 'matchEnd' && outcome === 'win'"
-      class="actions"
-    >
-      <button type="button" class="primary" @click="$emit('continue')">
-        Continuar <kbd>SPACE</kbd>
-      </button>
     </div>
   </div>
 </template>

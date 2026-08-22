@@ -71,6 +71,9 @@ watch(
     if (fx.type === 'camera') {
       api.setCameraMode?.(fx.mode || 'idle')
     }
+    if (fx.type === 'react') {
+      api.reactFighter?.(fx.who)
+    }
     if (fx.type === 'crowd') {
       api.reactCrowd?.(fx.kind || 'cheer')
     }

@@ -199,7 +199,7 @@ export async function createFighter({
 
   const model = cloneSkeleton(base)
   model.animations = []
-  tintModel(model, color)
+  const mats = tintModel(model, color)
   fitModel(model, male ? 2.15 : 2.0, { male })
   root.add(model)
 
@@ -255,6 +255,7 @@ export async function createFighter({
     model,
     mixer,
     actions,
+    mats,
     currentAction: null,
     hips,
     hipsHome,
@@ -285,20 +286,38 @@ export function playPose(fighter, poseId, intensity = 1) {
     return
   }
 
+  const isIdle = poseId === 'idle'
+
+  // Volver a idle: reinicio limpio (evita T-pose al terminar el baile)
+  if (isIdle) {
+    const idle = u.actions.idle
+    if (!idle || !u.mixer) return
+    u.mixer.stopAllAction()
+    idle.reset()
+    idle.setLoop(THREE.LoopRepeat, Infinity)
+    idle.setEffectiveTimeScale(1)
+    idle.setEffectiveWeight(1)
+    idle.enabled = true
+    idle.play()
+    u.currentAction = idle
+    return
+  }
+
   const speed = map.timeScale * (0.75 + intensity * 0.45)
   next.setEffectiveTimeScale(speed)
 
   if (u.currentAction === next) {
     next.setEffectiveWeight(1)
+    if (!next.isRunning()) next.play()
     return
   }
 
   if (u.currentAction) {
-    u.currentAction.fadeOut(0.2)
+    u.currentAction.fadeOut(0.22)
   }
   next.reset()
   next.setEffectiveWeight(1)
-  next.fadeIn(0.2)
+  next.fadeIn(0.22)
   next.play()
   u.currentAction = next
 }
@@ -312,11 +331,17 @@ export function updateFighter(fighter, dt, time) {
     u.hips.position.x = u.hipsHome.x
     u.hips.position.z = u.hipsHome.z
   }
-  fighter.position.y = 0
 
-  if (u.pose === 'idle' || u.pose === 'mewing' || u.pose === 'sigma-stare') {
-    u.aura.material.opacity = 0.1 + Math.sin(time * 1.5) * 0.03
+  if (u.pose === 'idle') {
+    fighter.position.y = Math.sin(time * 2.1) * 0.018
+    u.aura.material.opacity = 0.1 + Math.sin(time * 1.5) * 0.04
+  } else {
+    fighter.position.y = 0
+    if (u.pose === 'mewing' || u.pose === 'sigma-stare') {
+      u.aura.material.opacity = 0.1 + Math.sin(time * 1.5) * 0.03
+    }
   }
+
   u.ring.rotation.z = time * 0.6
   fighter.rotation.y = u.facing ?? 0
 }

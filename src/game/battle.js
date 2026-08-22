@@ -19,7 +19,7 @@ export function timingTier(accuracy) {
  * effect del move modifica el resultado
  */
 function playerMeterDelta(tierId, power, run, move) {
-  const p = power / 30
+  const p = power / 38
   const effect = move?.effect || 'aura'
   let auraGain = 0
   let cringeGain = 0
@@ -29,28 +29,31 @@ function playerMeterDelta(tierId, power, run, move) {
 
   switch (tierId) {
     case 'perfect': {
-      auraGain = Math.round(26 * p)
+      auraGain = Math.round(14 * p)
       if (run.iconicBonus) auraGain = Math.round(auraGain * (1 + run.iconicBonus))
-      rivalCringe = Math.round(10 * p)
+      rivalCringe = Math.round(6 * p)
       break
     }
     case 'great':
-      auraGain = Math.round(19 * p)
-      rivalCringe = Math.round(7 * p)
+      auraGain = Math.round(10 * p)
+      rivalCringe = Math.round(4 * p)
       break
     case 'ok':
-      auraGain = Math.round(12 * p)
-      cringeGain = Math.round(4 * p)
-      rivalCringe = 2
+      auraGain = Math.round(6 * p)
+      cringeGain = Math.round(3 * p)
+      rivalCringe = 1
       break
     case 'weak':
-      auraGain = Math.round(4 * p)
-      cringeGain = Math.round(12 * p)
+      auraGain = Math.round(2 * p)
+      cringeGain = Math.round(8 * p)
       break
     default:
       auraGain = 0
-      cringeGain = run.noSelfCringe ? Math.round(6 * p) : Math.round(18 * p)
+      cringeGain = run.noSelfCringe ? Math.round(4 * p) : Math.round(12 * p)
   }
+
+  // Un solo baile no puede llenar la barra
+  auraGain = Math.min(18, auraGain)
 
   if (effect === 'safe' && cringeGain > 0) {
     cringeGain = Math.max(1, Math.round(cringeGain * 0.35))
@@ -108,6 +111,42 @@ function rivalMeterDelta(tierId, difficulty) {
   }
 }
 
+export function buildBattleStats(battle) {
+  const log = battle.log || []
+  let auraGained = 0
+  let cringeTaken = 0
+  let rivalDrain = 0
+  let bestTier = 'weak'
+  const tierRank = { miss: 0, weak: 1, ok: 2, great: 3, perfect: 4 }
+  const moveSet = new Set()
+  const highlights = []
+
+  for (const entry of log) {
+    if (entry.side === 'player') {
+      auraGained += entry.auraGain || 0
+      cringeTaken += entry.cringeGain || 0
+      rivalDrain += entry.rivalAuraDrain || 0
+      if (entry.move) moveSet.add(entry.move)
+      if ((tierRank[entry.tier] ?? 0) > (tierRank[bestTier] ?? 0)) bestTier = entry.tier
+      if (entry.auraGain > 0) {
+        highlights.push(`T${entry.turn}: ${entry.move} +${entry.auraGain} AURA`)
+      }
+    } else if (entry.side === 'rival' && entry.auraLoss > 0) {
+      highlights.push(`T${entry.turn}: rival −${entry.auraLoss} AURA`)
+    }
+  }
+
+  return {
+    turns: battle.turn || 1,
+    auraGained,
+    cringeTaken,
+    rivalDrain,
+    bestTier,
+    movesUsed: moveSet.size,
+    highlights: highlights.slice(-5),
+  }
+}
+
 export function createBattle(rival, run) {
   const auraMax = run.maxHp || 100
   return {
@@ -123,7 +162,8 @@ export function createBattle(rival, run) {
     moveIndex: 0,
     lastResult: null,
     outcome: null,
-    combo: null,
+    pendingOutcome: null,
+    pendingMessage: null,
     tempArmor: 0,
     shieldLeft: run.auraShield || 0,
     secondWindUsed: false,
@@ -144,118 +184,61 @@ export function pickMove(state, moveId) {
   }
 }
 
-function checkEnd(state) {
+function peekOutcome(state) {
   if (state.playerCringe >= state.cringeMax) {
-    return { ...state, phase: 'matchEnd', outcome: 'lose', message: LOSE_LINE }
+    return { outcome: 'lose', message: LOSE_LINE }
   }
   if (state.rivalCringe >= state.cringeMax) {
-    // rival se quemó de cringe → ganas
-    return { ...state, phase: 'matchEnd', outcome: 'win', message: WIN_LINE }
+    return { outcome: 'win', message: WIN_LINE }
   }
   if (state.playerAura >= state.auraMax) {
-    return { ...state, phase: 'matchEnd', outcome: 'win', message: WIN_LINE }
+    return { outcome: 'win', message: WIN_LINE }
   }
   if (state.rivalAura >= state.auraMax) {
-    return { ...state, phase: 'matchEnd', outcome: 'lose', message: LOSE_LINE }
+    return { outcome: 'lose', message: LOSE_LINE }
   }
   return null
 }
 
+/** Tras la animación del turno, pasar a pantalla final */
+export function resolveMatchEnd(state) {
+  if (!state.pendingOutcome) return state
+  return {
+    ...state,
+    phase: 'matchEnd',
+    outcome: state.pendingOutcome,
+    message: state.pendingMessage || (state.pendingOutcome === 'win' ? WIN_LINE : LOSE_LINE),
+    pendingOutcome: null,
+    pendingMessage: null,
+  }
+}
+
+function finishShowPhase(state, showPhase) {
+  const end = peekOutcome(state)
+  if (!end) return { ...state, phase: showPhase, outcome: null }
+  return {
+    ...state,
+    phase: showPhase,
+    outcome: null,
+    pendingOutcome: end.outcome,
+    pendingMessage: end.message,
+  }
+}
+
 export function resolvePlayerAttack(state, accuracy, run) {
-  if (state.phase !== 'timing' && state.phase !== 'combo') return state
+  if (state.phase !== 'timing') return state
   if (!state.selectedMove) return state
 
   const move = state.selectedMove
   const tier = timingTier(accuracy)
-  const effect = move.effect || 'aura'
-
-  // Combo: ICÓNICO/ÉPICO siempre · move "combo" también con OK
-  const opensCombo =
-    tier.id === 'perfect' ||
-    tier.id === 'great' ||
-    (effect === 'combo' && tier.id === 'ok')
-
-  if (state.phase === 'timing' && opensCombo) {
-    const max = tier.id === 'perfect' ? 3 : tier.id === 'great' ? 2 : 2
-    return {
-      ...state,
-      phase: 'combo',
-      combo: {
-        step: 1,
-        max,
-        accuracies: [accuracy],
-        tiers: [tier.id],
-      },
-      message: `COMBO 1/${max} — ¡sigue el ritmo!`,
-      outcome: null,
-    }
-  }
-
-  // En combo: acumular o romper
-  if (state.phase === 'combo' && state.combo) {
-    const accuracies = [...state.combo.accuracies, accuracy]
-    const tiers = [...state.combo.tiers, tier.id]
-    const step = state.combo.step + 1
-    const broke = tier.id === 'miss' || tier.id === 'weak'
-    if (!broke && step < state.combo.max) {
-      return {
-        ...state,
-        phase: 'combo',
-        combo: { ...state.combo, step, accuracies, tiers },
-        message: `COMBO ${step}/${state.combo.max} — ¡sigue!`,
-      }
-    }
-    return finalizePlayerHits(
-      { ...state, combo: { ...state.combo, step, accuracies, tiers } },
-      run,
-      broke,
-    )
-  }
-
-  // Sin combo (OK / débil / cringe de una)
-  return finalizePlayerHits(
-    {
-      ...state,
-      combo: { step: 1, max: 1, accuracies: [accuracy], tiers: [tier.id] },
-    },
-    run,
-    false,
-  )
-}
-
-function finalizePlayerHits(state, run, broke) {
-  const move = state.selectedMove
   const power = getMovePower(run, move)
-  const accuracies = state.combo?.accuracies || [0]
-  const hits = accuracies.length
+  const d = playerMeterDelta(tier.id, power, run, move)
 
-  let auraGain = 0
-  let cringeGain = 0
-  let rivalCringe = 0
-  let rivalAuraDrain = 0
-  let armorGain = 0
-  let bestTier = timingTier(accuracies[0] ?? 0)
-
-  accuracies.forEach((acc, i) => {
-    const t = timingTier(acc)
-    if (t.mult >= bestTier.mult) bestTier = t
-    const d = playerMeterDelta(t.id, power, run, move)
-    const scale = 1 + (i > 0 ? 0.35 * i : 0)
-    auraGain += Math.round(d.auraGain * scale)
-    cringeGain += d.cringeGain
-    rivalCringe += Math.round(d.rivalCringe * (i === 0 ? 1 : 0.7))
-    rivalAuraDrain += Math.round(d.rivalAuraDrain * (i === 0 ? 1 : 0.6))
-    armorGain += d.armorGain || 0
-  })
-
-  // Bonus de combo completo
-  if (!broke && hits >= 2) {
-    let comboMult = hits >= 3 ? 1.4 : 1.22
-    if (run.comboBonus) comboMult += run.comboBonus
-    auraGain = Math.round(auraGain * comboMult)
-    rivalCringe = Math.round(rivalCringe * 1.15)
-    rivalAuraDrain = Math.round(rivalAuraDrain * 1.1)
-  }
+  const auraGain = d.auraGain
+  const cringeGain = d.cringeGain
+  const rivalCringe = d.rivalCringe
+  const rivalAuraDrain = d.rivalAuraDrain
+  const armorGain = d.armorGain || 0
 
   const tempArmor = Math.min(0.55, (state.tempArmor || 0) + armorGain)
   const playerAura = clamp(state.playerAura + auraGain, 0, state.auraMax)
@@ -264,13 +247,10 @@ function finalizePlayerHits(state, run, broke) {
   const rivalAura = clamp((state.rivalAura || 0) - rivalAuraDrain, 0, state.auraMax)
 
   let msg
-  if (hits >= 3) msg = `COMBO x${hits}: +${auraGain} AURA`
-  else if (hits === 2 && !broke) msg = `COMBO x2: +${auraGain} AURA`
-  else if (auraGain > 0) msg = `${move.name}: +${auraGain} AURA (${bestTier.label})`
-  else msg = `${move.name}: +${cringeGain} CRINGE (${bestTier.label})`
+  if (auraGain > 0) msg = `${move.name}: +${auraGain} AURA (${tier.label})`
+  else msg = `${move.name}: +${cringeGain} CRINGE (${tier.label})`
   if (rivalAuraDrain > 0) msg += ` · −${rivalAuraDrain} aura rival`
   if (armorGain > 0) msg += ` · +${Math.round(armorGain * 100)}% armadura`
-  if (broke && hits > 1) msg = `Combo roto · ${msg}`
 
   let next = {
     ...state,
@@ -279,22 +259,20 @@ function finalizePlayerHits(state, run, broke) {
     rivalCringe: rivalCringeNext,
     rivalAura,
     tempArmor,
-    combo: null,
-    timingScore: accuracies.reduce((a, b) => a + b, 0) / hits,
+    timingScore: accuracy,
     lastResult: {
       side: 'player',
       move,
-      accuracy: accuracies[accuracies.length - 1],
-      tier: bestTier,
+      accuracy,
+      tier,
       auraGain,
       cringeGain,
       rivalCringeGain: rivalCringe,
       auraLoss: 0,
       rivalAuraDrain,
       armorGain,
-      hits,
-      crowd: bestTier.crowd,
-      comboBroke: broke,
+      hits: 1,
+      crowd: tier.crowd,
     },
     message: msg,
     log: [
@@ -307,21 +285,16 @@ function finalizePlayerHits(state, run, broke) {
         cringeGain,
         rivalAuraDrain,
         armorGain,
-        tier: bestTier.id,
-        hits,
+        tier: tier.id,
       },
     ],
   }
 
-  const ended = checkEnd(next)
-  if (ended) return ended
-
-  return { ...next, phase: 'playerShow', outcome: null }
+  return finishShowPhase(next, 'playerShow')
 }
 
 export function resolveRivalAttack(state, run = {}) {
-  const early = checkEnd(state)
-  if (early) return early
+  if (state.pendingOutcome) return state
 
   const prefers = state.rival.prefers || []
   let move
@@ -425,22 +398,17 @@ export function resolveRivalAttack(state, run = {}) {
     ],
   }
 
-  const ended = checkEnd(next)
-  if (ended) return ended
-
-  return { ...next, phase: 'rivalShow', outcome: null }
+  return finishShowPhase(next, 'rivalShow')
 }
 
 export function nextPlayerTurn(state) {
-  const ended = checkEnd(state)
-  if (ended) return ended
+  if (state.pendingOutcome) return resolveMatchEnd(state)
   return {
     ...state,
     phase: 'pick',
     turn: state.turn + 1,
     selectedMove: null,
     lastResult: null,
-    combo: null,
     message: `Turno ${state.turn + 1}. Llena AURA a 100 · CRINGE lleno = pierdes`,
   }
 }

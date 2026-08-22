@@ -10,6 +10,7 @@ import RunMap from './components/RunMap.vue'
 import UpgradePick from './components/UpgradePick.vue'
 import LoadingScreen from './components/LoadingScreen.vue'
 import ShopScreen from './components/ShopScreen.vue'
+import BattleResult from './components/BattleResult.vue'
 import { MOVES } from './game/moves.js'
 import { preloadAssets } from './game/characters.js'
 import {
@@ -24,6 +25,7 @@ import {
   completeCurrentNode,
   getShopCatalog,
   buyShopItem,
+  enterShop,
   applyRest,
   coinsForNode,
 } from './game/run.js'
@@ -33,6 +35,8 @@ import {
   resolvePlayerAttack,
   resolveRivalAttack,
   nextPlayerTurn,
+  buildBattleStats,
+  resolveMatchEnd,
   WIN_LINE,
 } from './game/battle.js'
 
@@ -51,10 +55,16 @@ const sceneRef = ref(null)
 const moveIndex = ref(0)
 const upgradeChoices = ref([])
 const shopItems = ref([])
+const battleResultStats = ref(null)
+const battleCoinsEarned = ref(0)
+const endScreenReady = ref(false)
 const crowdEvent = ref(null)
 const spaceDown = ref(false)
 let showTimer = null
-const SHOW_MS = 2800
+const SHOW_MS = 2600
+const SHOW_MS_HIT = 3400
+const SHOW_MS_FINALE = 4200
+const END_SCREEN_DELAY = 700
 
 async function bootLoad() {
   loadError.value = ''
@@ -123,6 +133,8 @@ function goMap() {
 }
 
 function startFightFromNode(node) {
+  battleResultStats.value = null
+  endScreenReady.value = false
   const rival = getRivalForNode(node)
   Object.assign(battle, createBattle(rival, run))
   run.healAfter = false
@@ -142,6 +154,7 @@ function onMapEnter(nodeId) {
     return
   }
   if (node.type === 'shop') {
+    Object.assign(run, enterShop(run))
     shopItems.value = getShopCatalog(run)
     screen.value = 'shop'
     return
@@ -168,7 +181,13 @@ function onShopBuy(id) {
 
 function onShopLeave() {
   Object.assign(run, completeCurrentNode(run, { coinsGain: 0 }))
+  run.shopStock = null
   goMap()
+}
+
+function onBattleResultNext() {
+  battleResultStats.value = null
+  onWinFlow()
 }
 
 function onWinFlow() {
@@ -201,6 +220,36 @@ function onSelectMove(i) {
   battle.message = `${list[idx].name} · doble clic / SPACE para bailar`
 }
 
+function scheduleAttackReact(result) {
+  if (!result) return
+  const delay = 520
+  if (result.side === 'player') {
+    if (result.rivalAuraDrain > 0 || result.rivalCringeGain > 0) {
+      setTimeout(() => bumpFx({ type: 'react', who: 'rival' }), delay)
+    }
+    if (result.cringeGain > 0) {
+      setTimeout(() => bumpFx({ type: 'react', who: 'player' }), delay)
+    }
+  } else if (result.side === 'rival' && result.auraLoss > 0) {
+    setTimeout(() => bumpFx({ type: 'react', who: 'player' }), delay)
+  }
+}
+
+function getShowDuration() {
+  if (battle.pendingOutcome) return SHOW_MS_FINALE
+  const r = battle.lastResult
+  if (!r) return SHOW_MS
+  if (r.auraLoss > 0 || r.rivalAuraDrain > 0 || r.rivalCringeGain >= 3 || r.cringeGain >= 3) {
+    return SHOW_MS_HIT
+  }
+  return SHOW_MS
+}
+
+function presentEndScreen() {
+  endScreenReady.value = true
+  if (battle.outcome === 'win') showBattleResult()
+}
+
 function startAbility() {
   if (battle.phase !== 'pick') return
   const move = ownedMoves.value[moveIndex.value]
@@ -214,34 +263,17 @@ function onTiming(accuracy) {
   const next = resolvePlayerAttack(battle, accuracy, run)
   Object.assign(battle, next)
 
-  // Combo en curso → reinicia la barra
-  if (next.phase === 'combo') {
-    const step = next.combo?.step || 1
-    spawnFloat({
-      who: 'player',
-      kind: 'up',
-      text: `COMBO ${step}/${next.combo.max}`,
-      x: window.innerWidth / 2,
-      y: 130,
-    })
-    bumpFx({ type: 'camera', mode: step === 1 ? 'close' : 'low' })
-    nextTick(() => timingRef.value?.start())
-    return
-  }
-
   const result = next.lastResult
   if (!result) return
 
-  const hits = result.hits || 1
-  // nextTick: no dejar que otro fx pise el baile en el mismo tick
   nextTick(() => {
     bumpFx({
       type: 'move',
       who: 'player',
       moveId: result.move.id,
       intensity: Math.max(0.55, result.accuracy),
-      hits,
-      camera: hits >= 3 ? 'spin' : result.move.camera || 'side',
+      hits: 1,
+      camera: result.move.camera || 'side',
     })
   })
 
@@ -255,11 +287,9 @@ function onTiming(accuracy) {
       spawnFloat({ who: 'player', kind: 'up', text: `+${result.auraGain} AURA`, x: p.x, y: p.y })
     }
     if (result.cringeGain > 0) {
-      bumpFx({ type: 'aura', who: 'player', amount: -result.cringeGain })
       spawnFloat({ who: 'player', kind: 'down', text: `+${result.cringeGain} CRINGE`, x: p.x, y: p.y + 36 })
     }
     if (result.rivalCringeGain > 0) {
-      bumpFx({ type: 'aura', who: 'rival', amount: -result.rivalCringeGain })
       spawnFloat({
         who: 'rival',
         kind: 'down',
@@ -269,7 +299,6 @@ function onTiming(accuracy) {
       })
     }
     if (result.rivalAuraDrain > 0) {
-      bumpFx({ type: 'aura', who: 'rival', amount: -result.rivalAuraDrain })
       spawnFloat({
         who: 'rival',
         kind: 'down',
@@ -278,16 +307,9 @@ function onTiming(accuracy) {
         y: r.y + 40,
       })
     }
-    if (hits >= 2) {
-      spawnFloat({
-        who: 'player',
-        kind: 'up',
-        text: hits >= 3 ? 'COMBO x3' : 'COMBO x2',
-        x: window.innerWidth / 2,
-        y: 120,
-      })
-    }
   }, 650)
+
+  scheduleAttackReact(result)
 }
 
 function playRivalTurn() {
@@ -302,7 +324,7 @@ function playRivalTurn() {
 
   // Pequeña pausa estilo Pokémon entre turnos
   setTimeout(() => {
-    if (battle.phase !== 'rivalShow' && battle.phase !== 'matchEnd') return
+    if (battle.phase !== 'rivalShow') return
     if (!result?.move) return
     bumpFx({
       type: 'move',
@@ -319,7 +341,6 @@ function playRivalTurn() {
       const p = sceneRef.value?.projectToScreen?.('player') ?? { x: 140, y: 220 }
       const r = sceneRef.value?.projectToScreen?.('rival') ?? { x: window.innerWidth * 0.7, y: 220 }
       if (result.auraLoss > 0) {
-        bumpFx({ type: 'aura', who: 'player', amount: -result.auraLoss })
         spawnFloat({
           who: 'player',
           kind: 'down',
@@ -339,7 +360,6 @@ function playRivalTurn() {
         })
       }
       if (result.rivalCringeGain > 0) {
-        bumpFx({ type: 'aura', who: 'rival', amount: -result.rivalCringeGain })
         spawnFloat({
           who: 'rival',
           kind: 'down',
@@ -349,33 +369,36 @@ function playRivalTurn() {
         })
       }
     }, 650)
+
+    scheduleAttackReact(result)
   }, 450)
 }
 
 function onContinue() {
   clearShowTimer()
-  if (battle.phase === 'matchEnd') {
-    if (battle.outcome === 'lose') {
-      return
-    }
-    if (battle.outcome === 'win') onWinFlow()
-    return
-  }
   if (battle.phase === 'playerShow') {
-    if (battle.outcome === 'win') {
-      battle.phase = 'matchEnd'
-      battle.message = WIN_LINE
+    if (battle.pendingOutcome) {
+      Object.assign(battle, resolveMatchEnd(battle))
       return
     }
-    // Tu baile terminó → turno del rival (no los dos a la vez)
     playRivalTurn()
     return
   }
   if (battle.phase === 'rivalShow') {
+    if (battle.pendingOutcome) {
+      Object.assign(battle, resolveMatchEnd(battle))
+      return
+    }
     Object.assign(battle, nextPlayerTurn(battle))
     bumpFx({ type: 'reset' })
     bumpFx({ type: 'camera', mode: 'idle' })
   }
+}
+
+function showBattleResult() {
+  const node = getCurrentNode(run)
+  battleResultStats.value = buildBattleStats(battle)
+  battleCoinsEarned.value = coinsForNode(node)
 }
 
 function handleSpace() {
@@ -388,15 +411,20 @@ function handleSpace() {
   }
   if (!inBattle.value) return
 
+  if (battleResultStats.value) {
+    onBattleResultNext()
+    return
+  }
+
   if (battle.phase === 'pick') startAbility()
-  else if (battle.phase === 'timing' || battle.phase === 'combo') timingRef.value?.lock()
+  else if (battle.phase === 'timing') timingRef.value?.lock()
   // playerShow / rivalShow avanzan solos tras la animación
-  else if (battle.phase === 'matchEnd') {
+  else if (battle.phase === 'matchEnd' && endScreenReady.value) {
     if (battle.outcome === 'lose') {
       resetRun()
       goMenu()
     } else if (battle.outcome === 'win') {
-      onWinFlow()
+      onBattleResultNext()
     }
   }
 }
@@ -454,18 +482,28 @@ onBeforeUnmount(() => {
 watch(
   () => battle.phase,
   (phase) => {
-    if (phase === 'timing' || phase === 'combo') nextTick(() => timingRef.value?.start())
+    if (phase === 'timing') nextTick(() => timingRef.value?.start())
+    if (phase === 'matchEnd') {
+      endScreenReady.value = false
+      bumpFx({ type: 'reset' })
+      bumpFx({ type: 'camera', mode: 'idle' })
+      clearShowTimer()
+      showTimer = setTimeout(() => {
+        showTimer = null
+        presentEndScreen()
+      }, END_SCREEN_DELAY)
+    }
     if (phase === 'playerShow' || phase === 'rivalShow') {
-      const hits = battle.lastResult?.hits || 1
       clearShowTimer()
       showTimer = setTimeout(() => {
         showTimer = null
         onContinue()
-      }, SHOW_MS + (hits > 1 ? 400 * (hits - 1) : 0))
-    } else clearShowTimer()
+      }, getShowDuration())
+    } else if (phase !== 'matchEnd') {
+      clearShowTimer()
+    }
 
-    // No pisar fx 'move' en playerShow/rivalShow (si no, no baila)
-    if (phase === 'pick' || phase === 'timing' || phase === 'combo') {
+    if (phase === 'pick' || phase === 'timing') {
       bumpFx({ type: 'attacker', who: 'player' })
     } else if (phase === 'matchEnd' || phase === 'menu') {
       bumpFx({ type: 'attacker', who: null })
@@ -530,7 +568,10 @@ watch(
       <button type="button" @click="() => { resetRun(); goMap() }">Nueva ruta <kbd>SPACE</kbd></button>
     </div>
 
-    <div v-if="screen === 'battle' && battle.phase === 'matchEnd' && battle.outcome === 'lose'" class="banner lose">
+    <div
+      v-if="screen === 'battle' && battle.phase === 'matchEnd' && battle.outcome === 'lose' && endScreenReady"
+      class="banner lose"
+    >
       <h1>PERDISTE</h1>
       <p>Tu CRINGE llegó a 100 primero (o el rival llenó su AURA). Punto.</p>
       <button type="button" @click="() => { resetRun(); goMenu() }">Menú <kbd>SPACE</kbd></button>
@@ -556,22 +597,29 @@ watch(
         :outcome="battle.outcome"
         :floor="(getCurrentNode(run)?.layer ?? 0) + 1"
         :max-floors="run.maxFloors"
-        :combo="battle.combo"
         @select-move="onSelectMove"
         @attack="startAbility"
         @continue="onContinue"
         @restart="() => { resetRun(); goMenu() }"
       />
 
-      <div v-if="battle.phase === 'timing' || battle.phase === 'combo'" class="timing-wrap">
+      <div v-if="battle.phase === 'timing'" class="timing-wrap">
         <TimingBar
           ref="timingRef"
           :active="true"
           :move="battle.selectedMove || selectedMove"
-          :combo="battle.combo"
           @hit="onTiming"
         />
       </div>
+
+      <BattleResult
+        v-if="endScreenReady && battleResultStats"
+        :rival-name="battle.rival.name"
+        :stats="battleResultStats"
+        :coins-earned="battleCoinsEarned"
+        :is-boss="getCurrentNode(run)?.type === 'boss'"
+        @next="onBattleResultNext"
+      />
     </div>
   </div>
 </template>

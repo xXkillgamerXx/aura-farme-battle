@@ -6,7 +6,6 @@
  *  - drain  → te da AURA y baja AURA del rival
  *  - shame  → mete más CRINGE al rival
  *  - safe   → si fallas, menos CRINGE propio
- *  - combo  → abre combo también con OK
  *  - gamble → mucho poder, pero fallar duele más
  *  - guard  → gana armadura temporal (defensa)
  *  - armor  → reduce daño recibido este turno + farmea
@@ -17,7 +16,6 @@ export const EFFECT_LABELS = {
   drain: { short: 'ROBO', tip: 'Roba aura al rival' },
   shame: { short: 'VERGÜENZA', tip: 'Sube cringe rival' },
   safe: { short: 'SAFE', tip: 'Fallo menos doloroso' },
-  combo: { short: 'COMBO', tip: 'Combo más fácil' },
   gamble: { short: 'RIESGO', tip: 'Alto riesgo / recompensa' },
   guard: { short: 'BLOQUEO', tip: 'Gana armadura' },
   armor: { short: 'TANQUE', tip: 'Defensa + aura' },
@@ -59,10 +57,10 @@ export const MOVES = [
     id: 'six-seven',
     name: 'Wave Hip Hop',
     tag: 'baile',
-    effect: 'combo',
+    effect: 'shame',
     power: 30,
     risk: 0.16,
-    desc: 'Ritmo viral. Abre combo desde un OK.',
+    desc: 'Ritmo viral. Mete mucho CRINGE al rival si aciertas.',
     color: '#ffd166',
     bar: { zone: 0.42, width: 0.13, speed: 1.2 },
     camera: 'low',
@@ -262,12 +260,12 @@ export const UPGRADES = [
     },
   },
   {
-    id: 'combo-up',
-    name: 'Flow State',
-    desc: 'Combos dan +18% AURA extra',
+    id: 'rhythm-up',
+    name: 'Rhythm Up',
+    desc: 'ICÓNICO da +10% AURA extra',
     kind: 'offense',
     apply: (run) => {
-      run.comboBonus = (run.comboBonus || 0) + 0.18
+      run.iconicBonus = (run.iconicBonus || 0) + 0.1
     },
   },
   // —— Defensa pasiva ——

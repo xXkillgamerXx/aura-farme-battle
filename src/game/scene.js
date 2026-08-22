@@ -155,6 +155,12 @@ export async function createBattleScene(canvas) {
   let lunge = null
   let camMode = 'idle' // idle | close | side | low | spin
   let camT = 0
+  let camTransitionT = 99
+  const camLookSmooth = new THREE.Vector3(0, 1.1, 0)
+  const CAM_DAMP_POS = 2.6
+  const CAM_DAMP_LOOK = 3.4
+  const CAM_DAMP_POS_BLEND = 1.25
+  const CAM_BLEND_DURATION = 1.35
   let crowdIdleTimer = null
   let modelsReady = false
 
@@ -231,8 +237,21 @@ export async function createBattleScene(canvas) {
   }
 
   function setCameraMode(mode = 'idle') {
-    camMode = mode || 'idle'
-    camT = 0
+    const next = mode || 'idle'
+    if (next !== camMode) {
+      camMode = next
+      camT = 0
+      camTransitionT = 0
+    }
+  }
+
+  function smoothstep(edge0, edge1, x) {
+    const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)))
+    return t * t * (3 - 2 * t)
+  }
+
+  function reactFighter() {
+    reactCrowd('boo')
   }
 
   function triggerMove(who, moveId, intensity = 1, hits = 1, cameraStyle = 'side') {
@@ -403,9 +422,9 @@ export async function createBattleScene(canvas) {
     }
     if (shake > 0) shake = Math.max(0, shake - dt * 1.8)
 
-    // Cámara: órbita lenta + cambios de plano (cuts)
-    let goal = new THREE.Vector3()
-    let look = new THREE.Vector3(0, 1.1, 0)
+    // Cámara: órbita lenta + transiciones suaves entre planos
+    const goal = new THREE.Vector3()
+    const look = new THREE.Vector3(0, 1.1, 0)
     const focus =
       attackMarkWho === 'player' && player
         ? player.position
@@ -432,7 +451,7 @@ export async function createBattleScene(canvas) {
       goal.set(Math.sin(a) * 5.5, 3.0, Math.cos(a) * 5.5)
       look.set(0, 1.15, 0)
     } else {
-      // Idle: cambia de plano cada ~4.5s + deriva lenta
+      // Idle: planos que se mezclan suavemente (sin cortes bruscos)
       const SHOTS = [
         { x: 0, y: 3.4, z: 9.2, lx: 0, ly: 1.05, lz: -0.2 },
         { x: -4.2, y: 2.9, z: 7.4, lx: 0.3, ly: 1.15, lz: 0 },
@@ -441,26 +460,49 @@ export async function createBattleScene(canvas) {
         { x: -2.2, y: 4.0, z: 8.4, lx: 0, ly: 0.9, lz: -0.3 },
         { x: 2.6, y: 2.6, z: 8.8, lx: -0.2, ly: 1.2, lz: -0.1 },
       ]
-      const shotIdx = Math.floor(time / 4.5) % SHOTS.length
+      const SHOT_INTERVAL = 5.8
+      const SHOT_BLEND = 2.0
+      const cycle = time / SHOT_INTERVAL
+      const shotIdx = Math.floor(cycle) % SHOTS.length
+      const nextIdx = (shotIdx + 1) % SHOTS.length
+      const localT = cycle - Math.floor(cycle)
+      const blendStart = 1 - SHOT_BLEND / SHOT_INTERVAL
+      const mix = localT > blendStart ? smoothstep(0, 1, (localT - blendStart) / (1 - blendStart)) : 0
       const shot = SHOTS[shotIdx]
+      const shotNext = SHOTS[nextIdx]
       const drift = time * 0.22
+      const driftX = Math.sin(drift) * 0.35
+      const driftY = Math.sin(drift * 0.7) * 0.12
+      const driftZ = Math.cos(drift) * 0.25
       goal.set(
-        shot.x + Math.sin(drift) * 0.35,
-        shot.y + Math.sin(drift * 0.7) * 0.12,
-        shot.z + Math.cos(drift) * 0.25,
+        THREE.MathUtils.lerp(shot.x, shotNext.x, mix) + driftX,
+        THREE.MathUtils.lerp(shot.y, shotNext.y, mix) + driftY,
+        THREE.MathUtils.lerp(shot.z, shotNext.z, mix) + driftZ,
       )
-      look.set(shot.lx, shot.ly, shot.lz)
+      look.set(
+        THREE.MathUtils.lerp(shot.lx, shotNext.lx, mix),
+        THREE.MathUtils.lerp(shot.ly, shotNext.ly, mix),
+        THREE.MathUtils.lerp(shot.lz, shotNext.lz, mix),
+      )
     }
 
-    const lerpSpeed = camMode === 'idle' ? 0.045 : 0.085
-    camera.position.lerp(goal, lerpSpeed)
+    camTransitionT += dt
+    const blending = camTransitionT < CAM_BLEND_DURATION
+    const blendK = blending ? 1 - camTransitionT / CAM_BLEND_DURATION : 0
+    const posSpeed = THREE.MathUtils.lerp(CAM_DAMP_POS, CAM_DAMP_POS_BLEND, blendK)
+    const lookSpeed = THREE.MathUtils.lerp(CAM_DAMP_LOOK, CAM_DAMP_LOOK * 0.55, blendK)
+    const posT = 1 - Math.exp(-posSpeed * dt)
+    const lookT = 1 - Math.exp(-lookSpeed * dt)
+
+    camera.position.lerp(goal, posT)
+    camLookSmooth.lerp(look, lookT)
     camera.position.x += (Math.random() - 0.5) * shake
     camera.position.y += (Math.random() - 0.5) * shake * 0.5
-    camera.lookAt(look)
+    camera.lookAt(camLookSmooth)
 
     // NPCs delante de la cámara → se ocultan (cada 3 frames)
     if (++crowdOccTick % 3 === 0) {
-      updateCrowdOcclusion(crowdGroup, camera, look)
+      updateCrowdOcclusion(crowdGroup, camera, camLookSmooth)
     }
 
     renderer.render(scene, camera)
@@ -481,6 +523,7 @@ export async function createBattleScene(canvas) {
     centerOnFight() {},
     releaseFocus() {},
     triggerMove,
+    reactFighter,
     setCameraMode,
     showAuraBurst,
     pulse,
